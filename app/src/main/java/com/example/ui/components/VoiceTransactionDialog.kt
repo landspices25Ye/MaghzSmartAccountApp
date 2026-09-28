@@ -1,12 +1,9 @@
 package com.example.ui.components
 
-import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.os.Build
-import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -32,23 +29,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -75,9 +66,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.ai.AssistantResult
 import com.example.ui.theme.MoneyExpenseRed
-import com.example.ui.theme.MoneyIncomeGreen
 import com.example.ui.theme.PrimaryGreen
 import com.example.ui.viewmodel.AccountingViewModel
 import kotlinx.coroutines.delay
@@ -94,47 +83,42 @@ fun VoiceTransactionDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var spokenText by remember { mutableStateOf("") }
     var inputQuery by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
-    var parseResult by remember { mutableStateOf<AssistantResult?>(null) }
     
+    var isRecordingAudio by remember { mutableStateOf(false) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordingFile by remember { mutableStateOf<File?>(null) }
-    var isRecordingInApp by remember { mutableStateOf(false) }
-    
-    var liveSpeechStatus by remember { mutableStateOf("انقر الزر الكبير للتسجيل المباشر من الميكروفون، وسيقوم المحاسب بتفريغه وتحليله") }
+
+    var liveSpeechStatus by remember { mutableStateOf("اضغط زر الميكروفون للتحدث بحرية دون انقطاع، ثم انقر لإيقاف التسجيل وتفريغه") }
     var audioAmplitude by remember { mutableFloatStateOf(0.15f) }
     var recordingSeconds by remember { mutableIntStateOf(0) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    fun processSpeechInput(input: String) {
+    fun processSpeechInputAndAutoClose(input: String) {
         if (input.isBlank()) return
-        spokenText = input
         inputQuery = input
-        isProcessing = true
+        isProcessing = false
         errorMessage = null
-        parseResult = null
+
+        // Immediately close the dialog and notify parent so screen doesn't hang!
+        onSuccess(input)
+        onDismiss()
 
         scope.launch {
             try {
-                val result = viewModel.assistantProcessSpeech(input)
-                parseResult = result
-                isProcessing = false
-                if (result.executedTransaction != null) {
-                    onSuccess(result.reply)
-                }
+                // Execute directly in viewmodel assistant in the background
+                viewModel.assistantProcessSpeech(input)
             } catch (e: Throwable) {
-                isProcessing = false
-                errorMessage = e.localizedMessage ?: "حدث خطأ أثناء معالجة القيد الصوتي"
+                e.printStackTrace()
             }
         }
     }
 
-    fun stopRecordingInAppAndTranscribe() {
-        if (!isRecordingInApp) return
-        isRecordingInApp = false
-        liveSpeechStatus = "⏳ جاري تفريغ التسجيل الصوتي وتحويله إلى نص عالي الدقة..."
+    fun stopAudioRecordingAndTranscribe() {
+        if (!isRecordingAudio) return
+        isRecordingAudio = false
+        liveSpeechStatus = "⏳ جاري تفريغ الصوت وتحويله إلى نص دقيق..."
         isProcessing = true
         errorMessage = null
 
@@ -148,29 +132,29 @@ fun VoiceTransactionDialog(
         }
         mediaRecorder = null
 
-        val audioFile = recordingFile
-        if (audioFile == null || !audioFile.exists() || audioFile.length() <= 0) {
+        val file = recordingFile
+        if (file == null || !file.exists() || file.length() <= 0) {
             isProcessing = false
-            liveSpeechStatus = "لم يتم تسجيل صوت أو كان التسجيل قصيراً جداً. حاول التحدث مجدداً."
+            liveSpeechStatus = "لم يتم التقاط صوت واضح، اضغط للتحدث مجدداً."
             return
         }
 
         scope.launch {
             try {
-                val transcribedText = viewModel.transcribeAudioFile(audioFile, "audio/mp4")
-                if (!transcribedText.isNullOrBlank()) {
-                    inputQuery = transcribedText
-                    spokenText = transcribedText
-                    liveSpeechStatus = "تم التفريغ بنجاح: '$transcribedText'"
-                    processSpeechInput(transcribedText)
+                val text = viewModel.transcribeAudioFile(file, "audio/mp4")
+                if (!text.isNullOrBlank()) {
+                    inputQuery = text
+                    liveSpeechStatus = "تم التفريغ بنجاح: '$text'"
+                    // Process speech and automatically dismiss the dialog!
+                    processSpeechInputAndAutoClose(text)
                 } else {
                     isProcessing = false
-                    liveSpeechStatus = "تم تسجيل المقطع. يمكنك كتابة القيد أو النقر على العبارات النموذجية."
-                    errorMessage = "تعذر تحويل الصوت تلقائياً، يمكنك المتابعة بكتابة القيد في المربع أدناه."
+                    liveSpeechStatus = "تعذر تحويل المقطع تلقائياً، يمكنك كتابة القيد في المربع أدناه."
+                    errorMessage = "لم يتم التعرف على الصوت بدقة، يمكنك كتابته يدوياً."
                 }
             } catch (e: Throwable) {
                 isProcessing = false
-                liveSpeechStatus = "حدث خطأ أثناء تفريغ الصوت."
+                liveSpeechStatus = "حدث خطأ أثناء التفريغ."
                 errorMessage = e.localizedMessage
             }
         }
@@ -180,14 +164,12 @@ fun VoiceTransactionDialog(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) {
-            errorMessage = null
-        } else {
-            errorMessage = "يرجى منح إذن الوصول للميكروفون لبدء التسجيل الصوتي."
+        if (!isGranted) {
+            errorMessage = "يرجى منح إذن الميكروفون لاستخدام التسجيل الصوتي."
         }
     }
 
-    fun startRecordingInApp() {
+    fun startContinuousAudioRecording() {
         val hasPermission = ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.RECORD_AUDIO
@@ -197,17 +179,12 @@ fun VoiceTransactionDialog(
             try {
                 permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
             } catch (e: Throwable) {
-                errorMessage = "يرجى منح إذن الميكروفون من إعدادات الجهاز."
+                errorMessage = "يرجى السماح بالوصول للميكروفون من إعدادات جهازك."
             }
             return
         }
 
         try {
-            if (isRecordingInApp) {
-                stopRecordingInAppAndTranscribe()
-                return
-            }
-
             val file = File(context.cacheDir, "recorded_voice_tx.m4a")
             if (file.exists()) file.delete()
             recordingFile = file
@@ -227,28 +204,13 @@ fun VoiceTransactionDialog(
             recorder.start()
 
             mediaRecorder = recorder
-            isRecordingInApp = true
+            isRecordingAudio = true
             recordingSeconds = 0
-            liveSpeechStatus = "🔴 جاري تسجيل الصوت المباشر من الميكروفون... تحدث الآن ثم انقر مجدداً لإيقاف التسجيل وتفريغه"
+            liveSpeechStatus = "🔴 جاري التسجيل... تحدث بكل راحتك دون انقطاع ثم اضغط هنا للإيقاف والاعتماد"
             errorMessage = null
         } catch (e: Throwable) {
-            isRecordingInApp = false
-            errorMessage = "تعذر تشغيل الميكروفون: ${e.localizedMessage}. يمكنك استخدام الإملاء أو النقر على العبارات الجاهزة."
-        }
-    }
-
-    // System Recognizer Launcher (Google Voice Intent fallback)
-    val speechLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            val spoken = matches?.firstOrNull()
-            if (!spoken.isNullOrBlank()) {
-                inputQuery = spoken
-                liveSpeechStatus = "تم التفريغ عبر نظام أندرويد: '$spoken'"
-                processSpeechInput(spoken)
-            }
+            isRecordingAudio = false
+            errorMessage = "تعذر تشغيل الميكروفون: ${e.localizedMessage}"
         }
     }
 
@@ -256,7 +218,7 @@ fun VoiceTransactionDialog(
     DisposableEffect(Unit) {
         onDispose {
             try {
-                if (isRecordingInApp) {
+                if (isRecordingAudio) {
                     mediaRecorder?.stop()
                     mediaRecorder?.release()
                 }
@@ -267,11 +229,11 @@ fun VoiceTransactionDialog(
         }
     }
 
-    // Timer & Live Amplitude Wave loop
-    LaunchedEffect(isRecordingInApp) {
-        if (isRecordingInApp) {
+    // Timer & Live Amplitude Wave loop (Never stops on silence!)
+    LaunchedEffect(isRecordingAudio) {
+        if (isRecordingAudio) {
             recordingSeconds = 0
-            while (isActive && isRecordingInApp) {
+            while (isActive && isRecordingAudio) {
                 delay(100)
                 recordingSeconds++
                 try {
@@ -290,7 +252,7 @@ fun VoiceTransactionDialog(
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (isRecordingInApp) 1.25f else 1.05f,
+        targetValue = if (isRecordingAudio) 1.25f else 1.05f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 700, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -300,22 +262,31 @@ fun VoiceTransactionDialog(
 
     AlertDialog(
         onDismissRequest = {
-            if (isRecordingInApp) {
-                stopRecordingInAppAndTranscribe()
+            if (isRecordingAudio) {
+                try {
+                    mediaRecorder?.stop()
+                    mediaRecorder?.release()
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                }
+                mediaRecorder = null
+                isRecordingAudio = false
             }
             onDismiss()
         },
         confirmButton = {
-            if (parseResult?.executedTransaction != null) {
+            if (isRecordingAudio) {
                 Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
+                    onClick = { stopAudioRecordingAndTranscribe() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MoneyExpenseRed)
                 ) {
-                    Text("تم الإغلاق", color = Color.White)
+                    Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("إيقاف واعتماد التسجيل", color = Color.White)
                 }
             } else if (inputQuery.isNotBlank() && !isProcessing) {
                 Button(
-                    onClick = { processSpeechInput(inputQuery) },
+                    onClick = { processSpeechInputAndAutoClose(inputQuery) },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
                 ) {
                     Text("تنفيذ ومعالجة القيد", color = Color.White)
@@ -324,8 +295,15 @@ fun VoiceTransactionDialog(
         },
         dismissButton = {
             TextButton(onClick = {
-                if (isRecordingInApp) {
-                    stopRecordingInAppAndTranscribe()
+                if (isRecordingAudio) {
+                    try {
+                        mediaRecorder?.stop()
+                        mediaRecorder?.release()
+                    } catch (e: Throwable) {
+                        e.printStackTrace()
+                    }
+                    mediaRecorder = null
+                    isRecordingAudio = false
                 }
                 onDismiss()
             }) {
@@ -347,7 +325,7 @@ fun VoiceTransactionDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "تسجيل وتفريغ الصوت المحاسبي",
+                        text = "التسجيل والإملاء الصوتي",
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp
                     )
@@ -364,36 +342,36 @@ fun VoiceTransactionDialog(
                     .padding(vertical = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Microphone Action Circle & Audio Wave Visualizer
+                // Microphone Action Circle & Wave Visualizer
                 Box(
                     modifier = Modifier
                         .size(90.dp)
-                        .scale(if (isRecordingInApp) pulseScale else 1f)
+                        .scale(if (isRecordingAudio) pulseScale else 1f)
                         .clip(CircleShape)
                         .background(
-                            if (isRecordingInApp) MoneyExpenseRed.copy(alpha = 0.2f)
+                            if (isRecordingAudio) MoneyExpenseRed.copy(alpha = 0.2f)
                             else MaterialTheme.colorScheme.primaryContainer
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     IconButton(
                         onClick = {
-                            if (isRecordingInApp) {
-                                stopRecordingInAppAndTranscribe()
+                            if (isRecordingAudio) {
+                                stopAudioRecordingAndTranscribe()
                             } else {
-                                startRecordingInApp()
+                                startContinuousAudioRecording()
                             }
                         },
                         modifier = Modifier
                             .size(68.dp)
                             .clip(CircleShape)
-                            .background(if (isRecordingInApp) MoneyExpenseRed else PrimaryGreen)
+                            .background(if (isRecordingAudio) MoneyExpenseRed else PrimaryGreen)
                             .testTag("voice_dialog_mic_button")
                     ) {
                         Icon(
-                            imageVector = if (isRecordingInApp) Icons.Default.Stop else Icons.Default.Mic,
+                            imageVector = if (isRecordingAudio) Icons.Default.Stop else Icons.Default.Mic,
                             contentDescription = "تسجيل صوتي",
                             tint = Color.White,
                             modifier = Modifier.size(34.dp)
@@ -404,7 +382,9 @@ fun VoiceTransactionDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Listening Status Indicator & Wave Bars
-                if (isRecordingInApp) {
+                if (isRecordingAudio) {
+                    val secs = recordingSeconds / 10
+                    val formattedTime = String.format("%02d:%02d", secs / 60, secs % 60)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
@@ -416,10 +396,8 @@ fun VoiceTransactionDialog(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        val secs = recordingSeconds / 10
-                        val formattedTime = String.format("%02d:%02d", secs / 60, secs % 60)
                         Text(
-                            text = "🔴 جاري التسجيل ($formattedTime) - اضغط لإيقاف التسجيل وتفريغه",
+                            text = "🔴 جاري التسجيل ($formattedTime) - تحدث ثم اضغط للإيقاف والاعتماد",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = MoneyExpenseRed,
@@ -456,44 +434,20 @@ fun VoiceTransactionDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // System Google Voice Fallback Button
-                OutlinedButton(
-                    onClick = {
-                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ar-SA")
-                        }
-                        try {
-                            speechLauncher.launch(intent)
-                        } catch (e: Throwable) {
-                            errorMessage = "محرك Google Voice غير متاح على هذا الجهاز. استخدم التسجيل المباشر أعلاه."
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("أو استخدم التعرف الصوتي المباشر للنظام (Google Voice)", fontSize = 11.sp)
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Voice Text Field (Editable Live Transcribed Box)
+                // Voice Text Field (Editable Box)
                 OutlinedTextField(
                     value = inputQuery,
                     onValueChange = { inputQuery = it },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("voice_input_field"),
-                    label = { Text("النص المفرّغ من التسجيل الصوتي", fontSize = 11.sp) },
+                    label = { Text("النص المفرّغ من التسجيل", fontSize = 11.sp) },
                     placeholder = { Text("سيعرض النص المفرغ هنا فور إيقاف التسجيل...", fontSize = 12.sp) },
                     trailingIcon = {
-                        if (inputQuery.isNotBlank()) {
-                            IconButton(onClick = { processSpeechInput(inputQuery) }) {
+                        if (inputQuery.isNotBlank() && !isProcessing) {
+                            IconButton(onClick = { processSpeechInputAndAutoClose(inputQuery) }) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "معالجة والقيد",
@@ -514,46 +468,10 @@ fun VoiceTransactionDialog(
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryGreen)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "جاري فهم القيد الصوتي وتسجيله في المحاسب...",
+                            text = "جاري فهم القيد وتنفيذه وإغلاق النافذة تلقائياً...",
                             fontSize = 12.sp,
                             color = PrimaryGreen
                         )
-                    }
-                }
-
-                // Parsed Result Card
-                parseResult?.let { res ->
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (res.isSuccess) MoneyIncomeGreen.copy(alpha = 0.1f) else MoneyExpenseRed.copy(alpha = 0.1f)
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (res.isSuccess) Icons.Default.CheckCircle else Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = if (res.isSuccess) MoneyIncomeGreen else PrimaryGreen,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (res.executedTransaction != null) "تم القيد المحاسبي بنجاح!" else "نتيجة التحليل:",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = if (res.isSuccess) MoneyIncomeGreen else PrimaryGreen
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = res.reply,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
                     }
                 }
 
@@ -561,7 +479,7 @@ fun VoiceTransactionDialog(
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = "ℹ️ $err",
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.error,
                         fontSize = 11.sp,
                         textAlign = TextAlign.Center
                     )
@@ -584,16 +502,16 @@ fun VoiceTransactionDialog(
                 ) {
                     val examples = listOf(
                         "استلمت 1000 من محمد",
-                        "I paid 500 for rent",
+                        "أضف عميل جديد اسمه ماجد ورقمه 0501234567",
+                        "أضف مورد جديد اسمه شركة النور",
+                        "حول 500 من الصندوق الرئيسي إلى بنك الراجحي",
+                        "تقرير حركة اليوم مع تصدير PDF",
                         "صرفت 60 بنزين",
-                        "Paid 300 to supplier Mike",
-                        "سجل دين على علي 400",
-                        "Spent 50 on groceries",
                         "تسديد فاتورة كهرباء 150"
                     )
                     items(examples) { ex ->
                         SuggestionChip(
-                            onClick = { processSpeechInput(ex) },
+                            onClick = { processSpeechInputAndAutoClose(ex) },
                             label = { Text(ex, fontSize = 11.sp) }
                         )
                     }

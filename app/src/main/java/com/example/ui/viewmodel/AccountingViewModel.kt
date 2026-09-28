@@ -25,6 +25,48 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+data class ChatReportAction(
+    val reportType: String, // "DAILY", "PARTY", "CASH", "CUSTOM"
+    val reportTitle: String,
+    val partyId: Long? = null,
+    val partyName: String? = null,
+    val cashBoxId: Long? = null,
+    val cashBoxName: String? = null,
+    val totalIn: Double = 0.0,
+    val totalOut: Double = 0.0,
+    val netBalance: Double = 0.0,
+    val count: Int = 0
+) {
+    fun toActionTypeString(): String {
+        return "REPORT|$reportType|$reportTitle|${partyId ?: 0}|${partyName ?: ""}|${cashBoxId ?: 0}|${cashBoxName ?: ""}|$totalIn|$totalOut|$netBalance|$count"
+    }
+
+    companion object {
+        fun fromActionTypeString(actionType: String?): ChatReportAction? {
+            if (actionType == null || !actionType.startsWith("REPORT|")) return null
+            return try {
+                val parts = actionType.split("|")
+                if (parts.size >= 11) {
+                    ChatReportAction(
+                        reportType = parts[1],
+                        reportTitle = parts[2],
+                        partyId = parts[3].toLongOrNull()?.takeIf { it > 0 },
+                        partyName = parts[4].ifBlank { null },
+                        cashBoxId = parts[5].toLongOrNull()?.takeIf { it > 0 },
+                        cashBoxName = parts[6].ifBlank { null },
+                        totalIn = parts[7].toDoubleOrNull() ?: 0.0,
+                        totalOut = parts[8].toDoubleOrNull() ?: 0.0,
+                        netBalance = parts[9].toDoubleOrNull() ?: 0.0,
+                        count = parts[10].toIntOrNull() ?: 0
+                    )
+                } else null
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+}
+
 data class ChatMessage(
     val id: String = java.util.UUID.randomUUID().toString(),
     val text: String,
@@ -32,7 +74,8 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val isSuccess: Boolean = true,
     val actionType: String? = null,
-    val learnedMemoryText: String? = null
+    val learnedMemoryText: String? = null,
+    val reportAction: ChatReportAction? = null
 )
 
 fun AiChatMessageEntity.toChatMessage(): ChatMessage = ChatMessage(
@@ -42,7 +85,8 @@ fun AiChatMessageEntity.toChatMessage(): ChatMessage = ChatMessage(
     timestamp = timestamp,
     isSuccess = isSuccess,
     actionType = actionType,
-    learnedMemoryText = learnedMemoryText
+    learnedMemoryText = learnedMemoryText,
+    reportAction = ChatReportAction.fromActionTypeString(actionType)
 )
 
 data class FinancialSummary(

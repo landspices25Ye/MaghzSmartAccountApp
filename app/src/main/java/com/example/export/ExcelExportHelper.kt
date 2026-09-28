@@ -170,6 +170,31 @@ object ExcelExportHelper {
         }
     }
 
+    fun exportTransactionsToExcel(
+        context: Context,
+        reportTitle: String,
+        transactions: List<TransactionRecord>,
+        parties: Map<Long, Party>,
+        cashBoxes: Map<Long, CashBox>,
+        totalInflow: Double = 0.0,
+        totalOutflow: Double = 0.0,
+        netBalance: Double = 0.0
+    ): File? {
+        return exportCustomReportToExcel(
+            context = context,
+            reportTitle = reportTitle,
+            dateRangeText = "تقرير فوري من المحاسب الذكي",
+            accountsText = "كافة الحسابات المشمولة",
+            typesText = "جميع العمليات",
+            transactions = transactions,
+            parties = parties,
+            cashBoxes = cashBoxes,
+            totalInflow = totalInflow,
+            totalOutflow = totalOutflow,
+            netBalance = netBalance
+        )
+    }
+
     fun shareFile(context: Context, file: File, mimeType: String = "text/csv") {
         val uri = FileProvider.getUriForFile(
             context,

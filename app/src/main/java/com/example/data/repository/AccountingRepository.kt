@@ -219,6 +219,11 @@ class AccountingRepository(val database: AppDatabase) {
         return newBox.copy(id = id)
     }
 
+    // Direct Transaction Queries for Reports & AI Agent
+    suspend fun getTransactionsBetween(startTime: Long, endTime: Long): List<TransactionRecord> = transactionDao.getTransactionsBetween(startTime, endTime)
+    suspend fun getTransactionsForParty(partyId: Long): List<TransactionRecord> = transactionDao.getTransactionsForParty(partyId)
+    suspend fun getTransactionsForCashBox(cashBoxId: Long): List<TransactionRecord> = transactionDao.getTransactionsForCashBox(cashBoxId)
+
     /**
      * Records a financial transaction and applies balance adjustments atomically.
      */

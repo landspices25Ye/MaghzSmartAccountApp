@@ -5,10 +5,11 @@ import com.example.data.model.TransactionType
 import java.util.regex.Pattern
 
 data class ParsedAccountingIntent(
-    val action: String, // "TRANSACTION", "QUERY", "CHAT", "QUESTION", "REMEMBER", "ADVICE"
+    val action: String, // "TRANSACTION", "QUERY", "CHAT", "QUESTION", "REMEMBER", "ADVICE", "REPORT", "MANAGE_ENTITY"
     val transactionType: TransactionType? = null,
     val partyName: String? = null,
     val partyType: PartyType? = null,
+    val partyPhone: String? = null,
     val cashBoxName: String? = null,
     val targetCashBoxName: String? = null,
     val category: String = "",
@@ -18,7 +19,12 @@ data class ParsedAccountingIntent(
     val replyMessage: String = "",
     val learnedMemoryCategory: String? = null,
     val learnedMemoryKey: String? = null,
-    val learnedMemoryFact: String? = null
+    val learnedMemoryFact: String? = null,
+    val reportType: String? = null, // "DAILY", "PARTY", "CASH", "CUSTOM"
+    val entityOperation: String? = null, // "ADD_PARTY", "UPDATE_PARTY", "DELETE_PARTY", "ADD_CASH_BOX", "UPDATE_CASH_BOX", "DELETE_CASH_BOX", "TRANSFER_CASH", "ADD_EXPENSE_CATEGORY", "DELETE_EXPENSE_CATEGORY", "SET_DEFAULT_CURRENCY"
+    val entityType: String? = null, // "CUSTOMER", "SUPPLIER", "CASH_BOX", "EXPENSE_CATEGORY", "CURRENCY"
+    val newName: String? = null,
+    val initialBalance: Double = 0.0
 )
 
 object LocalAccountingNLP {
@@ -72,11 +78,321 @@ object LocalAccountingNLP {
         val amount = extractAmount(text)
         val extractedCurrency = extractCurrency(text).ifBlank { defaultCurrencySymbol }
 
+        // Check for specific report generation queries (Daily, Party Statement, Cash in Hand, Custom)
+        if (matchesAny(lowerText, listOf("تقرير", "كشف حساب", "كشف", "ملخص اليوم", "حركة اليوم", "تقرير اليوم", "statement", "report", "daily summary", "cash in hand", "تصدير"))) {
+            when {
+                matchesAny(lowerText, listOf("اليوم", "اليومية", "حركة اليوم", "ملخص اليوم", "daily")) -> {
+                    return ParsedAccountingIntent(
+                        action = "REPORT",
+                        reportType = "DAILY",
+                        replyMessage = "تقرير حركة وملخص اليوم المالي"
+                    )
+                }
+                matchesAny(lowerText, listOf("صندوق", "صناديق", "خزينة", "النقدية", "cash")) -> {
+                    return ParsedAccountingIntent(
+                        action = "REPORT",
+                        reportType = "CASH",
+                        replyMessage = "كشف النقدية والصناديق الحالية"
+                    )
+                }
+                matchesAny(lowerText, listOf("عميل", "عملاء", "ما لي", "ديون العملاء", "customer")) -> {
+                    val pName = extractPartyNameFromReportQuery(text)
+                    return ParsedAccountingIntent(
+                        action = "REPORT",
+                        reportType = if (pName.isNotBlank()) "PARTY" else "CUSTOM",
+                        partyName = pName.ifBlank { null },
+                        replyMessage = if (pName.isNotBlank()) "كشف حساب العميل $pName" else "تقرير ديون ومستحقات العملاء"
+                    )
+                }
+                matchesAny(lowerText, listOf("مورد", "موردين", "ما علي", "التزامات", "supplier")) -> {
+                    val pName = extractPartyNameFromReportQuery(text)
+                    return ParsedAccountingIntent(
+                        action = "REPORT",
+                        reportType = if (pName.isNotBlank()) "PARTY" else "CUSTOM",
+                        partyName = pName.ifBlank { null },
+                        replyMessage = if (pName.isNotBlank()) "كشف حساب المورد $pName" else "تقرير التزامات الموردين"
+                    )
+                }
+                lowerText.contains("كشف حساب") || lowerText.contains("كشف") || lowerText.contains("statement") -> {
+                    val pName = extractPartyNameFromReportQuery(text)
+                    if (pName.isNotBlank()) {
+                        return ParsedAccountingIntent(
+                            action = "REPORT",
+                            reportType = "PARTY",
+                            partyName = pName,
+                            replyMessage = "كشف حساب $pName"
+                        )
+                    } else {
+                        return ParsedAccountingIntent(
+                            action = "REPORT",
+                            reportType = "DAILY",
+                            replyMessage = "كشف التقرير المالي العام"
+                        )
+                    }
+                }
+                else -> {
+                    return ParsedAccountingIntent(
+                        action = "REPORT",
+                        reportType = "CUSTOM",
+                        replyMessage = "تقرير مالي مخصص"
+                    )
+                }
+            }
+        }
+
         // Check for balance queries in Arabic or English
         if (isBalanceQuery(lowerText)) {
             return ParsedAccountingIntent(
                 action = "QUERY",
                 replyMessage = "استعلام عن الأرصدة والموقف المالي الحالي"
+            )
+        }
+
+        // ==========================================
+        // Entity Management (Add / Update / Delete Parties, Cash Boxes, Expense Categories, Transfers, Transactions)
+        // ==========================================
+        // 0. Delete / Revert Last Transaction: "احذف آخر عملية", "امسح آخر حركة", "الغاء آخر عملية", "تراجع عن آخر حركة", "delete last transaction"
+        if (matchesAny(lowerText, listOf(
+                "احذف آخر عملية", "احذف اخر عملية", "احذف آخر عمليه", "احذف اخر عمليه",
+                "امسح آخر عملية", "امسح اخر عملية", "الغاء آخر عملية", "إلغاء آخر عملية",
+                "احذف آخر قيد", "احذف اخر قيد", "امسح آخر حركة", "امسح اخر حركة",
+                "تراجع عن آخر", "تراجع عن اخر", "delete last transaction", "revert last transaction",
+                "احذف العملية الأخيرة", "احذف العملية الاخيرة"
+            ))
+        ) {
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "DELETE_TRANSACTION",
+                replyMessage = "حذف آخر عملية مالية مسجلة وإعادة ضبط الأرصدة"
+            )
+        }
+
+        // 1. Cash Transfer between Cash Boxes: "حول 500 من الصندوق الرئيسي إلى بنك الراجحي", "transfer 500 from box A to box B"
+        if ((lowerText.contains("حول") || lowerText.contains("تحويل") || lowerText.contains("حولت") || lowerText.contains("transfer")) &&
+            (lowerText.contains("من") || lowerText.contains("from")) &&
+            (lowerText.contains("إلى") || lowerText.contains("الى") || lowerText.contains("to"))
+        ) {
+            val fromBox = extractBetween(text, listOf("من", "from"), listOf("إلى", "الى", "to"))
+            val toBox = extractAfter(text, listOf("إلى", "الى", "to"))
+            if (amount > 0 && fromBox.isNotBlank() && toBox.isNotBlank()) {
+                return ParsedAccountingIntent(
+                    action = "MANAGE_ENTITY",
+                    entityOperation = "TRANSFER_CASH",
+                    amount = amount,
+                    cashBoxName = fromBox,
+                    targetCashBoxName = toBox,
+                    description = "تحويل نقدي من $fromBox إلى $toBox",
+                    replyMessage = "تحويل $amount $extractedCurrency من $fromBox إلى $toBox"
+                )
+            }
+        }
+
+        // 2. Add Customer or Supplier
+        val isAddCustomer = matchesAny(lowerText, listOf(
+            "أضف عميل", "اضف عميل", "ضيف عميل", "عميل جديد", "تسجيل عميل", "سجل عميل",
+            "سجل لي عميل", "انشئ عميل", "إنشاء عميل", "افتح حساب عميل", "إضافة عميل",
+            "اضافة عميل", "اريد اضافة عميل", "ابغى اضيف عميل", "add customer", "new customer", "create customer"
+        ))
+        val isAddSupplier = matchesAny(lowerText, listOf(
+            "أضف مورد", "اضف مورد", "ضيف مورد", "مورد جديد", "تسجيل مورد", "سجل مورد",
+            "سجل لي مورد", "انشئ مورد", "إنشاء مورد", "افتح حساب مورد", "إضافة مورد",
+            "اضافة مورد", "اريد اضافة مورد", "ابغى اضيف مورد", "add supplier", "new supplier", "create supplier"
+        ))
+
+        if (isAddCustomer || isAddSupplier) {
+            val isCustomer = !isAddSupplier
+            val phone = extractPhoneNumber(text)
+            val pName = extractEntityNameAfterKeywords(
+                text = text,
+                keywords = listOf(
+                    "اسمه", "اسم", "باسم", "بإسم", "العميل", "عميل", "المورد", "مورد",
+                    "عميل جديد", "مورد جديد", "customer", "supplier", "customer named"
+                ),
+                stopWords = listOf("ورقمه", "رقم", "هاتف", "هاتفه", "برصيد", "رصيد", "phone", "with balance")
+            )
+
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "ADD_PARTY",
+                partyType = if (isCustomer) PartyType.CUSTOMER else PartyType.SUPPLIER,
+                partyName = pName.ifBlank { if (isCustomer) "عميل جديد" else "مورد جديد" },
+                partyPhone = phone.ifBlank { null },
+                initialBalance = amount,
+                replyMessage = "إضافة ${if (isCustomer) "العميل" else "المورد"} $pName"
+            )
+        }
+
+        // 3. Update Customer / Supplier: "عدل اسم العميل ماجد إلى ماجد الأحمد", "عدل رقم العميل ماجد إلى 0555", "عدل رصيد العميل ماجد إلى 500"
+        val isUpdateParty = matchesAny(lowerText, listOf(
+            "عدل العميل", "تعديل العميل", "عدل بيانات العميل", "عدل اسم العميل", "تغيير اسم العميل",
+            "عدل رقم العميل", "تعديل رقم العميل", "عدل هاتف العميل", "عدل رصيد العميل", "تعديل رصيد العميل",
+            "عدل المورد", "تعديل المورد", "عدل بيانات المورد", "عدل اسم المورد", "تغيير اسم المورد",
+            "عدل رقم المورد", "تعديل رقم المورد", "عدل رصيد المورد", "تعديل رصيد المورد",
+            "update customer", "edit customer", "update supplier", "edit supplier"
+        ))
+
+        if (isUpdateParty) {
+            val isCustomer = !matchesAny(lowerText, listOf("مورد", "supplier"))
+            val phone = extractPhoneNumber(text)
+            val pName = extractEntityNameAfterKeywords(
+                text = text,
+                keywords = listOf("اسم العميل", "اسم المورد", "العميل", "عميل", "المورد", "مورد", "customer", "supplier"),
+                stopWords = listOf("إلى", "الى", "ورقمه", "رقم", "رصيد", "to", "phone")
+            )
+            val newName = if (lowerText.contains("اسم") && (lowerText.contains("إلى") || lowerText.contains("الى") || lowerText.contains("to"))) {
+                extractAfter(text, listOf("إلى", "الى", "to"))
+            } else null
+
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "UPDATE_PARTY",
+                partyType = if (isCustomer) PartyType.CUSTOMER else PartyType.SUPPLIER,
+                partyName = pName,
+                newName = newName,
+                partyPhone = phone.ifBlank { null },
+                amount = amount,
+                replyMessage = "تعديل بيانات ${if (isCustomer) "العميل" else "المورد"} $pName"
+            )
+        }
+
+        // 4. Delete Party: "احذف العميل ماجد", "امسح المورد شركة النور", "delete customer John"
+        if (matchesAny(lowerText, listOf(
+                "احذف العميل", "امسح العميل", "حذف العميل", "إلغاء العميل", "ازالة العميل",
+                "احذف المورد", "امسح المورد", "حذف المورد", "إلغاء المورد", "ازالة المورد",
+                "احذف عميل", "امسح عميل", "احذف مورد", "امسح مورد",
+                "delete customer", "delete supplier"
+            ))
+        ) {
+            val isCustomer = !matchesAny(lowerText, listOf("مورد", "supplier"))
+            val pName = extractEntityNameAfterKeywords(text, listOf("العميل", "عميل", "المورد", "مورد", "customer", "supplier"))
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "DELETE_PARTY",
+                partyType = if (isCustomer) PartyType.CUSTOMER else PartyType.SUPPLIER,
+                partyName = pName,
+                replyMessage = "حذف ${if (isCustomer) "العميل" else "المورد"} $pName"
+            )
+        }
+
+        // 5. Add Cash Box / Bank: "أضف صندوق جديد باسم بنك الراجحي برصيد 5000", "أضف بنك الراجحي", "add cash box Bank ABC"
+        if (matchesAny(lowerText, listOf(
+                "أضف صندوق", "اضف صندوق", "ضيف صندوق", "إضافة صندوق", "اضافة صندوق",
+                "أنشئ صندوق", "انشئ صندوق", "صندوق جديد", "خزينة جديدة", "حساب بنكي جديد",
+                "أضف بنك", "اضف بنك", "ضيف بنك", "إضافة بنك", "اضافة بنك", "افتح حساب بنكي",
+                "add cash box", "add bank", "new cash box", "new bank"
+            ))
+        ) {
+            val boxName = extractEntityNameAfterKeywords(
+                text = text,
+                keywords = listOf(
+                    "باسم", "بإسم", "اسم", "صندوق جديد", "خزينة جديدة", "حساب بنكي",
+                    "أضف بنك", "اضف بنك", "ضيف بنك", "بنك", "الصندوق", "صندوق", "cash box", "bank"
+                ),
+                stopWords = listOf("برصيد", "رصيد", "with balance", "balance")
+            )
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "ADD_CASH_BOX",
+                cashBoxName = boxName.ifBlank { "صندوق جديد" },
+                amount = amount,
+                replyMessage = "إضافة صندوق/حساب بنكي باسم $boxName"
+            )
+        }
+
+        // 6. Update Cash Box: "عدل رصيد الصندوق الرئيسي إلى 5000", "عدل اسم الصندوق..."
+        if (matchesAny(lowerText, listOf(
+                "عدل الصندوق", "تعديل الصندوق", "عدل رصيد الصندوق", "تعديل رصيد الصندوق",
+                "عدل اسم الصندوق", "تغيير اسم الصندوق", "عدل الخزينة", "عدل البنك", "update cash box"
+            ))
+        ) {
+            val boxName = extractEntityNameAfterKeywords(text, listOf("الصندوق", "صندوق", "الخزينة", "البنك", "cash box"), stopWords = listOf("إلى", "الى", "رصيد", "to"))
+            val newName = if (lowerText.contains("اسم") && (lowerText.contains("إلى") || lowerText.contains("الى") || lowerText.contains("to"))) {
+                extractAfter(text, listOf("إلى", "الى", "to"))
+            } else null
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "UPDATE_CASH_BOX",
+                cashBoxName = boxName,
+                newName = newName,
+                amount = amount,
+                replyMessage = "تعديل بيانات الصندوق $boxName"
+            )
+        }
+
+        // 7. Delete Cash Box: "احذف الصندوق بنك الراجحي", "delete cash box..."
+        if (matchesAny(lowerText, listOf("احذف الصندوق", "امسح الصندوق", "حذف الصندوق", "احذف الخزينة", "احذف البنك", "حذف البنك", "delete cash box"))) {
+            val boxName = extractEntityNameAfterKeywords(text, listOf("الصندوق", "صندوق", "الخزينة", "البنك", "cash box"))
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "DELETE_CASH_BOX",
+                cashBoxName = boxName,
+                replyMessage = "حذف الصندوق $boxName"
+            )
+        }
+
+        // 8. Add Expense Category: "أضف بند مصروف جديد باسم صيانة السيارات", "add expense category Maintenance"
+        if (matchesAny(lowerText, listOf(
+                "أضف بند مصروف", "اضف بند مصروف", "ضيف بند مصروف",
+                "أضف تصنيف مصروف", "اضف تصنيف مصروف", "ضيف تصنيف مصروف",
+                "إضافة بند مصروف", "اضافة بند مصروف", "بند مصروف جديد", "تصنيف مصروف جديد",
+                "أضف مصروف جديد", "اضف مصروف جديد",
+                "add expense category", "new expense category"
+            ))
+        ) {
+            val catName = extractEntityNameAfterKeywords(text, listOf("باسم", "بإسم", "اسم", "مصروف", "تصنيف", "category"))
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "ADD_EXPENSE_CATEGORY",
+                category = catName.ifBlank { "بند مصروف جديد" },
+                replyMessage = "إضافة بند مصروف جديد باسم $catName"
+            )
+        }
+
+        // 9. Update Expense Category: "عدل بند المصروف صيانة إلى صيانة عامة"
+        if (matchesAny(lowerText, listOf("عدل بند المصروف", "تعديل بند المصروف", "تغيير اسم بند المصروف", "عدل تصنيف المصروف", "تعديل تصنيف المصروف"))) {
+            val catName = extractEntityNameAfterKeywords(text, listOf("المصروف", "بند", "تصنيف", "category"), stopWords = listOf("إلى", "الى", "to"))
+            val newName = if (lowerText.contains("إلى") || lowerText.contains("الى") || lowerText.contains("to")) {
+                extractAfter(text, listOf("إلى", "الى", "to"))
+            } else null
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "UPDATE_EXPENSE_CATEGORY",
+                category = catName,
+                newName = newName,
+                replyMessage = "تعديل بند المصروف $catName"
+            )
+        }
+
+        // 10. Delete Expense Category: "احذف بند المصروف صيانة السيارات"
+        if (matchesAny(lowerText, listOf("احذف بند المصروف", "احذف تصنيف المصروف", "امسح بند المصروف", "حذف بند المصروف", "delete expense category"))) {
+            val catName = extractEntityNameAfterKeywords(text, listOf("المصروف", "بند", "تصنيف", "category"))
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "DELETE_EXPENSE_CATEGORY",
+                category = catName,
+                replyMessage = "حذف بند المصروف $catName"
+            )
+        }
+
+        // 11. Add Currency: "أضف عملة جديدة باسم درهم", "أضف عملة اليورو"
+        if (matchesAny(lowerText, listOf("أضف عملة", "اضف عملة", "ضيف عملة", "عملة جديدة", "add currency"))) {
+            val currName = extractEntityNameAfterKeywords(text, listOf("باسم", "بإسم", "اسم", "عملة", "currency"))
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "ADD_CURRENCY",
+                currency = currName,
+                replyMessage = "إضافة عملة جديدة $currName"
+            )
+        }
+
+        // 12. Change Default Currency: "غير العملة الافتراضية إلى الدولار", "اجعل العملة الافتراضية دولار"
+        if (matchesAny(lowerText, listOf("غير العملة", "تغيير العملة", "اجعل العملة", "العملة الافتراضية", "change currency", "default currency"))) {
+            val currName = extractEntityNameAfterKeywords(text, listOf("إلى", "الى", "الافتراضية", "currency", "to"))
+            return ParsedAccountingIntent(
+                action = "MANAGE_ENTITY",
+                entityOperation = "SET_DEFAULT_CURRENCY",
+                currency = currName,
+                replyMessage = "تغيير العملة الافتراضية إلى $currName"
             )
         }
 
@@ -507,5 +823,108 @@ object LocalAccountingNLP {
     private fun extractNote(text: String, stopWords: List<String>): String {
         val clean = text.replace(Regex("[0-9٠-٩]+(\\.[0-9٠-٩]+)?"), "").replace("ريال", "").trim()
         return clean
+    }
+
+    private fun extractPartyNameFromReportQuery(text: String): String {
+        val prefixes = listOf(
+            "كشف حساب العميل",
+            "كشف حساب المورد",
+            "كشف حساب لـ",
+            "كشف حساب ل",
+            "كشف حساب",
+            "كشف العميل",
+            "كشف المورد",
+            "كشف لـ",
+            "كشف ل",
+            "كشف",
+            "تقرير العميل",
+            "تقرير المورد",
+            "تقرير",
+            "statement for",
+            "statement of",
+            "report for"
+        )
+        for (prefix in prefixes) {
+            val idx = text.indexOf(prefix, ignoreCase = true)
+            if (idx != -1) {
+                val after = text.substring(idx + prefix.length).trim()
+                val words = after.split(Regex("\\s+")).filter { it.isNotBlank() }
+                val cleanWords = mutableListOf<String>()
+                for (w in words) {
+                    if (w in listOf("مع", "تصدير", "pdf", "excel", "إكسل", "بي", "دي", "اف", "طباعة", "اليوم", "هذا", "الشهر", "الماضي", "كامل")) {
+                        break
+                    }
+                    cleanWords.add(w)
+                    if (cleanWords.size >= 3) break
+                }
+                if (cleanWords.isNotEmpty()) {
+                    return cleanWords.joinToString(" ")
+                }
+            }
+        }
+        return ""
+    }
+
+    private fun extractPhoneNumber(text: String): String {
+        // Extract 9-14 digit numbers or common phone formats e.g. 0501234567, +966..., 05...
+        val match = Regex("(?:\\+?\\d{1,4}[-\\s]?)?\\d{7,14}").find(text)
+        return match?.value?.replace(Regex("[\\s-]"), "") ?: ""
+    }
+
+    private fun extractEntityNameAfterKeywords(
+        text: String,
+        keywords: List<String>,
+        stopWords: List<String> = emptyList()
+    ): String {
+        for (kw in keywords) {
+            val idx = text.indexOf(kw, ignoreCase = true)
+            if (idx != -1) {
+                val after = text.substring(idx + kw.length).trim()
+                val words = after.split(Regex("\\s+")).filter { it.isNotBlank() }
+                val cleanWords = mutableListOf<String>()
+                for (w in words) {
+                    val isStop = stopWords.any { w.equals(it, ignoreCase = true) } ||
+                            w.matches(Regex(".*[0-9٠-٩].*")) ||
+                            w in listOf("برصيد", "ورقم", "ورقمه", "هاتف", "هاتفه", "بمبلغ", "مبلغ", "رصيد", "في", "إلى", "الى", "to", "phone")
+                    if (isStop) break
+                    cleanWords.add(w)
+                    if (cleanWords.size >= 4) break
+                }
+                if (cleanWords.isNotEmpty()) {
+                    return cleanWords.joinToString(" ")
+                }
+            }
+        }
+        return ""
+    }
+
+    private fun extractBetween(text: String, startKeywords: List<String>, endKeywords: List<String>): String {
+        for (start in startKeywords) {
+            val startIdx = text.indexOf(start, ignoreCase = true)
+            if (startIdx != -1) {
+                val sub = text.substring(startIdx + start.length).trim()
+                for (end in endKeywords) {
+                    val endIdx = sub.indexOf(end, ignoreCase = true)
+                    if (endIdx != -1) {
+                        val result = sub.substring(0, endIdx).trim()
+                        val words = result.split(Regex("\\s+")).filter { !it.matches(Regex(".*[0-9٠-٩].*")) }
+                        if (words.isNotEmpty()) return words.joinToString(" ")
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
+    private fun extractAfter(text: String, keywords: List<String>): String {
+        for (kw in keywords) {
+            val idx = text.indexOf(kw, ignoreCase = true)
+            if (idx != -1) {
+                val after = text.substring(idx + kw.length).trim()
+                val words = after.split(Regex("\\s+")).filter { !it.matches(Regex(".*[0-9٠-٩].*")) && it !in listOf("مبلغ", "ريال", "دينار", "دولار", "بمبلغ") }
+                if (words.isNotEmpty()) return words.take(3).joinToString(" ")
+            }
+        }
+        return ""
     }
 }

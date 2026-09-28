@@ -87,10 +87,17 @@ class GeminiAccountingService(
                 1. "TRANSACTION": تسجيل عملية مالية (قبض، صرف، دين لعميل، دين لمورد، مصروف، إيراد، تحويل).
                    - تنبأ ببند المصروف الأنسب تلقائياً من قائمة بنود المصروفات المعتمدة إذا كانت العملية EXPENSE.
                    - استخدم الصندوق الافتراضي والعملة الافتراضية إذا لم يحدد المستخدم غيرها، ما لم توجد قاعدة في الذاكرة تنص على خلاف ذلك.
-                2. "QUERY" أو "ADVICE": استعلامات مالية، تحليل الأرصدة، تقديم نصائح للسيولة، كشف الحسابات، الإجابة عن أسئلة المستخدم حول وضعه المالي أو ديونه.
-                3. "QUESTION": إذا كان الطلب غامضاً أو يحتاج تفصيلاً، اطرح سؤالاً توضيحياً ودياً.
-                4. "REMEMBER": إذا طلب المستخدم تذكر أو حفظ معلومة (مثل "تذكر أن...", "احفظ عندك أن...", "أنا اسمي...", "محمد هو شريكي...", "دائماً ادفع للمورد فلان من بنك كذا") أو ذكر حقيقة مهمة عن نشاطه، قم بصياغة رد ودؤوب يؤكد حفظها وتعبئة كائن newMemory.
-                5. "CHAT": محادثة طبيعية واستفسارات عامة وتحية ومناقشات مالية.
+                2. "MANAGE_ENTITY": إدارة وإضافة وتعديل وحذف أي كيان في التطبيق (عميل، مورد، صندوق/حساب بنكي، تصنيف مصروف، تحويل بين الصناديق، تغيير العملة الافتراضية، التراجع عن آخر عملية).
+                   - entityOperation: "ADD_PARTY", "UPDATE_PARTY", "DELETE_PARTY", "ADD_CASH_BOX", "UPDATE_CASH_BOX", "DELETE_CASH_BOX", "TRANSFER_CASH", "ADD_EXPENSE_CATEGORY", "UPDATE_EXPENSE_CATEGORY", "DELETE_EXPENSE_CATEGORY", "SET_DEFAULT_CURRENCY", "ADD_CURRENCY", "DELETE_TRANSACTION"
+                   - partyType: "CUSTOMER" أو "SUPPLIER"
+                   - phone: رقم الهاتف إن وجد
+                   - initialBalance / amount: الرصيد أو المبلغ المطلوب
+                   - newName: الاسم الجديد للكيان عند طلب التعديل
+                3. "QUERY" أو "ADVICE": استعلامات مالية، تحليل الأرصدة، تقديم نصائح للسيولة، كشف الحسابات، الإجابة عن أسئلة المستخدم حول وضعه المالي أو ديونه.
+                4. "QUESTION": إذا كان الطلب غامضاً أو يحتاج تفصيلاً، اطرح سؤالاً توضيحياً ودياً.
+                5. "REPORT": إذا طلب المستخدم تقريراً مالياً أو كشف حساب (مثل تقرير حركة اليوم، كشف حساب عميل، كشف حساب مورد، كشف الصندوق، تقرير المصروفات، تصدير PDF أو إكسل). حدد reportType ("DAILY" أو "PARTY" أو "CASH" أو "CUSTOM") واسم الطرف أو الصندوق إن وجد.
+                6. "REMEMBER": إذا طلب المستخدم تذكر أو حفظ معلومة (مثل "تذكر أن...", "احفظ عندك أن...", "أنا اسمي...", "محمد هو شريكي...", "دائماً ادفع للمورد فلان من بنك كذا") أو ذكر حقيقة مهمة عن نشاطه، قم بصياغة رد ودؤوب يؤكد حفظها وتعبئة كائن newMemory.
+                7. "CHAT": محادثة طبيعية واستفسارات عامة وتحية ومناقشات مالية.
 
                 أنواع العمليات المتاحة (transactionType):
                 • CUSTOMER_RECEIPT: قبض نقدية من عميل (يزيد الصندوق وينقص دين العميل).
@@ -103,16 +110,20 @@ class GeminiAccountingService(
 
                 يجب أن يكون الرد بصيغة JSON حصراً بدون markdown code block بهذا الشكل:
                 {
-                  "action": "TRANSACTION" أو "QUERY" أو "QUESTION" أو "CHAT" أو "REMEMBER" أو "ADVICE",
+                  "action": "TRANSACTION" أو "MANAGE_ENTITY" أو "QUERY" أو "QUESTION" أو "CHAT" أو "REMEMBER" أو "ADVICE" أو "REPORT",
+                  "entityOperation": "ADD_PARTY" أو "UPDATE_PARTY" أو "DELETE_PARTY" أو "ADD_CASH_BOX" أو "UPDATE_CASH_BOX" أو "DELETE_CASH_BOX" أو "TRANSFER_CASH" أو "ADD_EXPENSE_CATEGORY" أو "UPDATE_EXPENSE_CATEGORY" أو "DELETE_EXPENSE_CATEGORY" أو "SET_DEFAULT_CURRENCY" أو "ADD_CURRENCY" أو "DELETE_TRANSACTION" أو null,
                   "transactionType": "CUSTOMER_RECEIPT" أو "EXPENSE" أو null,
                   "partyName": "اسم الطرف إن وجد",
                   "partyType": "CUSTOMER" أو "SUPPLIER" أو null,
+                  "phone": "رقم الهاتف إن وجد",
                   "cashBoxName": "اسم الصندوق أو $defaultCashBoxName",
                   "targetCashBoxName": "اسم الصندوق المحول له إن وجد",
-                  "category": "بند المصروف المتنبأ به",
+                  "category": "بند المصروف",
                   "currency": "$defaultCurrencySymbol أو العملة المحددة",
                   "amount": 0.0,
+                  "newName": "الاسم الجديد عند التعديل إن وجد",
                   "description": "بيان مختصر وواضح",
+                  "reportType": "DAILY" أو "PARTY" أو "CASH" أو "CUSTOM" أو null,
                   "replyMessage": "رسالتك التفاعلية الذكية للمستخدم باللغة العربية بطريقة مهنية واضحة ومباشرة",
                   "newMemory": {
                     "category": "PARTY_NOTE" أو "BUSINESS_INFO" أو "ACCOUNTING_RULE" أو "USER_PREFERENCE" أو "GENERAL",
@@ -207,6 +218,7 @@ class GeminiAccountingService(
                 transactionType = type,
                 partyName = parsedJson.optString("partyName", "").takeIf { it.isNotBlank() && it != "null" },
                 partyType = partyType,
+                partyPhone = parsedJson.optString("phone", "").takeIf { it.isNotBlank() && it != "null" },
                 cashBoxName = parsedJson.optString("cashBoxName", defaultCashBoxName).takeIf { it.isNotBlank() && it != "null" },
                 targetCashBoxName = parsedJson.optString("targetCashBoxName", "").takeIf { it.isNotBlank() && it != "null" },
                 category = parsedJson.optString("category", "").takeIf { it.isNotBlank() && it != "null" } ?: "",
@@ -216,7 +228,26 @@ class GeminiAccountingService(
                 replyMessage = parsedJson.optString("replyMessage", "تمت معالجة طلبك بنجاح"),
                 learnedMemoryCategory = memCategory,
                 learnedMemoryKey = memKey,
-                learnedMemoryFact = memFact
+                learnedMemoryFact = memFact,
+                reportType = parsedJson.optString("reportType", "").takeIf { it.isNotBlank() && it != "null" },
+                entityOperation = parsedJson.optString("entityOperation", "").takeIf { it.isNotBlank() && it != "null" }?.let { raw ->
+                    when (raw.uppercase()) {
+                        "ADD_CUSTOMER" -> "ADD_PARTY"
+                        "ADD_SUPPLIER" -> "ADD_PARTY"
+                        "EDIT_CUSTOMER", "EDIT_SUPPLIER", "EDIT_PARTY", "UPDATE_CUSTOMER", "UPDATE_SUPPLIER" -> "UPDATE_PARTY"
+                        "DELETE_CUSTOMER", "DELETE_SUPPLIER" -> "DELETE_PARTY"
+                        "ADD_BANK", "ADD_BANK_ACCOUNT", "NEW_BANK" -> "ADD_CASH_BOX"
+                        "EDIT_CASH_BOX", "EDIT_BOX" -> "UPDATE_CASH_BOX"
+                        "DELETE_BOX", "DELETE_BANK" -> "DELETE_CASH_BOX"
+                        "ADD_CATEGORY" -> "ADD_EXPENSE_CATEGORY"
+                        "EDIT_CATEGORY", "EDIT_EXPENSE_CATEGORY", "UPDATE_CATEGORY" -> "UPDATE_EXPENSE_CATEGORY"
+                        "DELETE_CATEGORY" -> "DELETE_EXPENSE_CATEGORY"
+                        "DELETE_LAST_TRANSACTION", "REVERT_TRANSACTION", "CANCEL_TRANSACTION" -> "DELETE_TRANSACTION"
+                        else -> raw
+                    }
+                },
+                newName = parsedJson.optString("newName", "").takeIf { it.isNotBlank() && it != "null" },
+                initialBalance = parsedJson.optDouble("initialBalance", parsedJson.optDouble("amount", 0.0))
             )
         } catch (e: Exception) {
             e.printStackTrace()
