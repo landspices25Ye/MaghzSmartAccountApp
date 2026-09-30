@@ -25,27 +25,27 @@ class AiPreferencesManager(context: Context) {
         private const val KEY_USE_CUSTOM_KEY = "use_custom_api_key"
         private const val KEY_TEMPERATURE = "ai_temperature"
 
-        const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
+        const val DEFAULT_MODEL = "gemini-3.5-flash"
         const val DEFAULT_TEMPERATURE = 0.1f
 
         val AVAILABLE_MODELS = listOf(
             GeminiModelOption(
-                id = "gemini-3.5-flash-lite",
-                name = "Gemini 3.5 Flash Lite",
-                description = "النموذج الافتراضي: فائق السرعة وخفيف ومثالي للمهام المحاسبية وتوفير الحصص",
-                badge = "افتراضي وموصى به"
+                id = "gemini-3.5-flash",
+                name = "Gemini 3.5 Flash",
+                description = "النموذج الافتراضي الموصى به: فائق السرعة والدقة في فهم المعاملات والمحاسبة والتقارير",
+                badge = "الافتراضي والموصى به"
             ),
             GeminiModelOption(
-                id = "gemini-3.7-flash",
-                name = "Gemini 3.7 Flash",
-                description = "أداء متقدم وسرعة استجابة عالية مع قدرات استنتاج محسنة للعمليات المالية",
-                badge = "متقدم وسريع"
+                id = "gemini-3.1-pro-preview",
+                name = "Gemini 3.1 Pro",
+                description = "نموذج التفكير والتحليل المتقدم: قدرات استنتاج استثنائية للاستشارات المالية والتحليلات العميقة",
+                badge = "تحليل عميق وتفكير"
             ),
             GeminiModelOption(
-                id = "gemini-3.8-flash",
-                name = "Gemini 3.8 Flash",
-                description = "أحدث إصدار من عائلة فلاش بأعلى دقة وفهم عميق للبيانات المحاسبية",
-                badge = "الأحدث والأذكى"
+                id = "gemini-3.1-flash-lite-preview",
+                name = "Gemini 3.1 Flash Lite",
+                description = "نموذج خفيف وسريع جداً: استجابة فورية للمهام البسيطة وتسجيل العمليات وتوفير الحصص",
+                badge = "خفيف وفائق السرعة"
             )
         )
 

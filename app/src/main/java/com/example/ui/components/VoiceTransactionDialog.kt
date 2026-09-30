@@ -101,18 +101,11 @@ fun VoiceTransactionDialog(
         isProcessing = false
         errorMessage = null
 
-        // Immediately close the dialog and notify parent so screen doesn't hang!
+        // Execute directly in viewModelScope so it never gets cancelled on dismiss
+        viewModel.processVoiceCommand(input)
+
         onSuccess(input)
         onDismiss()
-
-        scope.launch {
-            try {
-                // Execute directly in viewmodel assistant in the background
-                viewModel.assistantProcessSpeech(input)
-            } catch (e: Throwable) {
-                e.printStackTrace()
-            }
-        }
     }
 
     fun stopAudioRecordingAndTranscribe() {

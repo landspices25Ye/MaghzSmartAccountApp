@@ -60,6 +60,7 @@ import java.util.Locale
 @Composable
 fun DailyOverviewSection(
     transactions: List<TransactionRecord>,
+    currencySymbol: String = "ر.س",
     modifier: Modifier = Modifier
 ) {
     val currencyFormat = remember { DecimalFormat("#,##0.##") }
@@ -338,7 +339,7 @@ fun DailyOverviewSection(
 
                             Column(modifier = Modifier.weight(0.3f), horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = "${if (point.net >= 0) "+" else ""}${currencyFormat.format(point.net)} ر.س",
+                                    text = "${if (point.net >= 0) "+" else ""}${currencyFormat.format(point.net)} $currencySymbol",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (point.net >= 0) MoneyIncomeGreen else MoneyExpenseRed

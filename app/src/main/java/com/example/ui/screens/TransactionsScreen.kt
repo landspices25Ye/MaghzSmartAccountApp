@@ -71,6 +71,7 @@ import com.example.export.PdfExportHelper
 import com.example.search.IntelligentSearchEngine
 import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.TransactionCardItem
+import com.example.ui.components.TransactionDetailsDialog
 import com.example.ui.theme.MoneyExpenseRed
 import com.example.ui.theme.MoneyIncomeGreen
 import com.example.ui.theme.PrimaryGreen
@@ -99,6 +100,7 @@ fun TransactionsScreen(viewModel: AccountingViewModel) {
     var showFilterSheet by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
     var showVoiceDialog by remember { mutableStateOf(false) }
+    var selectedTxForDetails by remember { mutableStateOf<com.example.data.model.TransactionRecord?>(null) }
 
     // Advanced manual filters (can be combined with intelligent search)
     var filterDatePreset by remember { mutableStateOf("ALL") }
@@ -487,6 +489,8 @@ fun TransactionsScreen(viewModel: AccountingViewModel) {
                             boxName = boxName,
                             timeString = timeFormat.format(Date(tx.timestamp)),
                             currencyFormat = currencyFormat,
+                            defaultCurrencySymbol = currencySymbol,
+                            onClick = { selectedTxForDetails = tx },
                             onDelete = { viewModel.deleteTransaction(tx) }
                         )
                     }
@@ -497,93 +501,18 @@ fun TransactionsScreen(viewModel: AccountingViewModel) {
 
     // Advanced Filter Modal Bottom Sheet
     if (showFilterSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showFilterSheet = false },
-            sheetState = rememberModalBottomSheetState()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "تصفية متقدمة لنتائج البحث",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-
-                // Amount Range
-                Text("نطاق المبلغ ($currencySymbol):", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedTextField(
-                        value = filterMinAmount?.toString() ?: "",
-                        onValueChange = { filterMinAmount = it.toDoubleOrNull() },
-                        label = { Text("الحد الأدنى") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = filterMaxAmount?.toString() ?: "",
-                        onValueChange = { filterMaxAmount = it.toDoubleOrNull() },
-                        label = { Text("الحد الأقصى") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                }
-
-                // Quick Amount Presets
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    AssistChip(
-                        onClick = { filterMinAmount = 0.0; filterMaxAmount = 100.0 },
-                        label = { Text("< 100 $currencySymbol", fontSize = 11.sp) }
-                    )
-                    AssistChip(
-                        onClick = { filterMinAmount = 100.0; filterMaxAmount = 500.0 },
-                        label = { Text("100 - 500", fontSize = 11.sp) }
-                    )
-                    AssistChip(
-                        onClick = { filterMinAmount = 500.0; filterMaxAmount = 2000.0 },
-                        label = { Text("500 - 2000", fontSize = 11.sp) }
-                    )
-                    AssistChip(
-                        onClick = { filterMinAmount = 2000.0; filterMaxAmount = null },
-                        label = { Text("> 2000 $currencySymbol", fontSize = 11.sp) }
-                    )
-                }
-
-                // Action Buttons
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = { showFilterSheet = false },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("تطبيق التصفية")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            filterMinAmount = null
-                            filterMaxAmount = null
-                            showFilterSheet = false
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("إلغاء التصفية")
-                    }
-                }
-            }
-        }
+        com.example.ui.components.transactions.TransactionFilterSheet(
+            currencySymbol = currencySymbol,
+            minAmount = filterMinAmount,
+            maxAmount = filterMaxAmount,
+            onMinAmountChanged = { filterMinAmount = it },
+            onMaxAmountChanged = { filterMaxAmount = it },
+            onReset = {
+                filterMinAmount = null
+                filterMaxAmount = null
+            },
+            onDismiss = { showFilterSheet = false }
+        )
     }
 
     if (showAddDialog) {
@@ -617,6 +546,19 @@ fun TransactionsScreen(viewModel: AccountingViewModel) {
             onSuccess = { reply ->
                 showVoiceDialog = false
             }
+        )
+    }
+
+    selectedTxForDetails?.let { tx ->
+        val party = parties.firstOrNull { it.id == tx.partyId }
+        val box = cashBoxes.firstOrNull { it.id == tx.cashBoxId }
+        TransactionDetailsDialog(
+            transaction = tx,
+            party = party,
+            cashBox = box,
+            currencySymbol = currencySymbol,
+            onDelete = { viewModel.deleteTransaction(tx) },
+            onDismiss = { selectedTxForDetails = null }
         )
     }
 }

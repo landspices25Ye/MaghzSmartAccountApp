@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.AppCurrency
 import com.example.data.model.CashBox
 import com.example.data.model.ExpenseCategory
@@ -377,6 +378,44 @@ fun AddTransactionDialog(
             OutlinedButton(onClick = onDismiss) {
                 Text("إلغاء")
             }
+        }
+    )
+}
+
+@Composable
+fun AddTransactionDialog(
+    viewModel: com.example.ui.viewmodel.AccountingViewModel,
+    initialType: TransactionType = TransactionType.CUSTOMER_RECEIPT,
+    initialPartyId: Long? = null,
+    onDismiss: () -> Unit
+) {
+    val cashBoxes by viewModel.cashBoxes.collectAsStateWithLifecycle()
+    val parties by viewModel.parties.collectAsStateWithLifecycle()
+    val categories by viewModel.expenseCategories.collectAsStateWithLifecycle()
+    val currencies by viewModel.currencies.collectAsStateWithLifecycle()
+    val defaultCurrency by viewModel.defaultCurrency.collectAsStateWithLifecycle()
+
+    AddTransactionDialog(
+        cashBoxes = cashBoxes,
+        parties = parties,
+        categories = categories,
+        currencies = currencies,
+        defaultCurrencySymbol = defaultCurrency?.symbol?.ifBlank { "ر.س" } ?: "ر.س",
+        initialType = initialType,
+        initialPartyId = initialPartyId,
+        onDismiss = onDismiss,
+        onConfirm = { type, amount, cashBoxId, partyId, description, targetCashBoxId, category, currency ->
+            viewModel.recordDirectTransaction(
+                type = type,
+                amount = amount,
+                cashBoxId = cashBoxId,
+                partyId = partyId,
+                description = description,
+                targetCashBoxId = targetCashBoxId,
+                category = category,
+                currency = currency
+            )
+            onDismiss()
         }
     )
 }

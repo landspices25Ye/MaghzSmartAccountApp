@@ -27,6 +27,7 @@ import com.example.data.model.PartyType
 @Composable
 fun AddPartyDialog(
     initialType: PartyType = PartyType.CUSTOMER,
+    currencySymbol: String = "ر.س",
     onDismiss: () -> Unit,
     onConfirm: (name: String, type: PartyType, phone: String, initialBalance: Double, notes: String) -> Unit
 ) {
@@ -91,7 +92,7 @@ fun AddPartyDialog(
                     value = initialBalanceText,
                     onValueChange = { initialBalanceText = it },
                     label = {
-                        Text(if (selectedType == PartyType.CUSTOMER) "رصيد دين سابق عليه (ريال)" else "رصيد دين سابق له (ريال)")
+                        Text(if (selectedType == PartyType.CUSTOMER) "رصيد دين سابق عليه ($currencySymbol)" else "رصيد دين سابق له ($currencySymbol)")
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),

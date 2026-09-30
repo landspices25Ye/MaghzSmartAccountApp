@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -57,6 +58,8 @@ fun TransactionCardItem(
     boxName: String?,
     timeString: String,
     currencyFormat: DecimalFormat,
+    defaultCurrencySymbol: String = "ر.س",
+    onClick: (() -> Unit)? = null,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -74,10 +77,19 @@ fun TransactionCardItem(
     }
 
     val categoryIcon = getCategoryIcon(tx.category, tx.type)
-    val currencyLabel = tx.currency.ifBlank { "ر.س" }
+    val currencyLabel = tx.currency.ifBlank { defaultCurrencySymbol }
+
+    val cardModifier = if (onClick != null) {
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+    } else {
+        modifier.fillMaxWidth()
+    }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = cardModifier,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)

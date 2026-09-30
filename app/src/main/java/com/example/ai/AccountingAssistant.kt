@@ -577,35 +577,60 @@ class AccountingAssistant(
 
                     if (matchedParty != null) {
                         val partyTx = repository.getTransactionsForParty(matchedParty.id)
-                        val totalIn = partyTx.filter { it.type == TransactionType.CUSTOMER_RECEIPT }.sumOf { it.amount }
-                        val totalOut = partyTx.filter { it.type == TransactionType.SUPPLIER_PAYMENT }.sumOf { it.amount }
-                        val role = if (matchedParty.type == PartyType.CUSTOMER) "العميل" else "المورد"
-                        val balanceDesc = if (matchedParty.type == PartyType.CUSTOMER) {
-                            if (matchedParty.balance >= 0) "ما لنا عنده: ${currencyFormat.format(matchedParty.balance)} $defaultCurrencySymbol"
-                            else "له علينا: ${currencyFormat.format(-matchedParty.balance)} $defaultCurrencySymbol"
-                        } else {
-                            if (matchedParty.balance >= 0) "ما له علينا: ${currencyFormat.format(matchedParty.balance)} $defaultCurrencySymbol"
-                            else "لنا عنده: ${currencyFormat.format(-matchedParty.balance)} $defaultCurrencySymbol"
+                        val isCustomer = matchedParty.type == PartyType.CUSTOMER
+                        var totalDebit = 0.0
+                        var totalCredit = 0.0
+
+                        partyTx.forEach { tx ->
+                            if (isCustomer) {
+                                when (tx.type) {
+                                    TransactionType.CUSTOMER_NEW_DEBIT, TransactionType.INCOME -> totalDebit += tx.amount
+                                    TransactionType.CUSTOMER_RECEIPT -> totalCredit += tx.amount
+                                    TransactionType.SETTLEMENT -> {
+                                        if (tx.amount >= 0) totalDebit += tx.amount else totalCredit += -tx.amount
+                                    }
+                                    else -> totalDebit += tx.amount
+                                }
+                            } else {
+                                when (tx.type) {
+                                    TransactionType.SUPPLIER_NEW_CREDIT, TransactionType.EXPENSE -> totalCredit += tx.amount
+                                    TransactionType.SUPPLIER_PAYMENT -> totalDebit += tx.amount
+                                    TransactionType.SETTLEMENT -> {
+                                        if (tx.amount >= 0) totalCredit += tx.amount else totalDebit += -tx.amount
+                                    }
+                                    else -> totalCredit += tx.amount
+                                }
+                            }
                         }
+
+                        val role = if (isCustomer) "العميل" else "المورد"
+                        val balanceSide = if (isCustomer) {
+                            if (matchedParty.balance >= 0) "دين عليه (لنا عنده)" else "دين له (علينا له)"
+                        } else {
+                            if (matchedParty.balance >= 0) "دين له (علينا له)" else "دين عليه (لنا عنده)"
+                        }
+                        val balanceDesc = "${currencyFormat.format(Math.abs(matchedParty.balance))} $defaultCurrencySymbol ($balanceSide)"
 
                         val reportAction = com.example.ui.viewmodel.ChatReportAction(
                             reportType = "PARTY",
                             reportTitle = "كشف حساب $role: ${matchedParty.name}",
                             partyId = matchedParty.id,
                             partyName = matchedParty.name,
-                            totalIn = totalIn,
-                            totalOut = totalOut,
+                            totalIn = totalDebit,
+                            totalOut = totalCredit,
                             netBalance = matchedParty.balance,
                             count = partyTx.size
                         )
 
                         val replyText = """
                             👤 **كشف حساب $role: ${matchedParty.name}**
-                            💰 الرصيد الحالي: $balanceDesc
-                            📝 إجمالي الحركات المسجلة في حسابه: ${partyTx.size} حركة
+                            🟢 إجمالي مدين (عليه): ${currencyFormat.format(totalDebit)} $defaultCurrencySymbol
+                            🔴 إجمالي دائن (له): ${currencyFormat.format(totalCredit)} $defaultCurrencySymbol
+                            ⚖️ الرصيد الصافي: $balanceDesc
+                            📝 إجمالي الحركات المسجلة: ${partyTx.size} حركة
                             ${if (matchedParty.phone.isNotBlank()) "📞 رقم التواصل: ${matchedParty.phone}" else ""}
 
-                            💡 تم تجهيز كشف الحساب الرسمي ويمكنك تصديره كملف PDF قابل للطباعة أو جدول Excel أدناه مباشرة:
+                            💡 تم تجهيز كشف الحساب التفصيلي، يمكنك تصديره ومشاركته فوراً بملف PDF رسمي أو جدول Excel من الأزرار أدناه:
                         """.trimIndent()
 
                         return AssistantResult(

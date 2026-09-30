@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.text.DecimalFormat
 
 data class ChatReportAction(
     val reportType: String, // "DAILY", "PARTY", "CASH", "CUSTOM"
@@ -95,6 +96,20 @@ data class FinancialSummary(
     val owedByMe: Double = 0.0,      // ما علي للموردين
     val netWorth: Double = 0.0,      // صافي الثروة
     val currencySymbol: String = "ر.س"
+)
+
+data class FinancialHealth(
+    val score: Int = 100, // 0 - 100
+    val status: String = "ممتاز",
+    val message: String = "الوضع المالي متزن ومطمئن",
+    val assetsRatio: Float = 1.0f
+)
+
+data class CashRunway(
+    val dailyExpense: Double = 0.0,
+    val runwayDays: Int = 90,
+    val totalMonthlyExpense: Double = 0.0,
+    val statusText: String = "سيولة كافية ومستقرة"
 )
 
 class AccountingViewModel(application: Application) : AndroidViewModel(application) {
@@ -246,6 +261,88 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinancialSummary())
 
+    val financialHealth: StateFlow<FinancialHealth> = combine(summary, transactions) { summ, txList ->
+        val assets = summ.totalCash + summ.owedToMe
+        val liabilities = summ.owedByMe
+        val total = assets + liabilities
+        val ratio = if (total > 0) (assets / total).toFloat().coerceIn(0f, 1f) else 1f
+
+        val score = when {
+            liabilities <= 0 && summ.totalCash >= 0 -> 100
+            summ.totalCash >= liabilities * 2 -> 95
+            summ.totalCash >= liabilities -> 85
+            summ.netWorth > 0 -> (60 + (ratio * 30)).toInt().coerceIn(60, 84)
+            else -> (ratio * 50).toInt().coerceIn(10, 59)
+        }
+
+        val status = when {
+            score >= 90 -> "ممتاز جداً"
+            score >= 75 -> "جيد ومستقر"
+            score >= 60 -> "متوسط ومقبول"
+            else -> "يحتاج عناية ومتابعة"
+        }
+
+        val message = when {
+            score >= 90 -> "سيولة قوية وديون الموردين مغطاة بالكامل وفائض مالي صحي."
+            score >= 75 -> "المركز المالي آمن، يوصى بالاستمرار في تحصيل مستحقات العملاء بانتظام."
+            score >= 60 -> "الالتزامات قريبة من السيولة المتاحة، تجنب المصروفات غير الضرورية."
+            else -> "تنبيه: ديون الموردين تفوق السيولة المتوفرة. يجب تسريع التحصيل وإدارة النقد."
+        }
+
+        FinancialHealth(score = score, status = status, message = message, assetsRatio = ratio)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinancialHealth())
+
+    val cashRunway: StateFlow<CashRunway> = combine(summary, transactions) { summ, txList ->
+        val thirtyDaysAgo = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
+        val recentExpenses = txList.filter { it.type == TransactionType.EXPENSE && it.timestamp >= thirtyDaysAgo }
+        val totalExpenseLast30Days = recentExpenses.sumOf { it.amount }
+        val dailyExpense = if (totalExpenseLast30Days > 0) totalExpenseLast30Days / 30.0 else 0.0
+
+        val days = if (dailyExpense > 0) {
+            (summ.totalCash / dailyExpense).toInt().coerceAtLeast(0)
+        } else {
+            if (summ.totalCash > 0) 999 else 0
+        }
+
+        val statusText = when {
+            days >= 90 -> "أمان مالي مرتفع (أكثر من 3 أشهر)"
+            days in 30..89 -> "تغطية مقبولة (1 - 3 أشهر)"
+            days in 1..29 -> "تغطية حرجة (أقل من شهر)"
+            else -> "لا توجد مصروفات مسجلة مؤخراً"
+        }
+
+        CashRunway(
+            dailyExpense = dailyExpense,
+            runwayDays = days,
+            totalMonthlyExpense = totalExpenseLast30Days,
+            statusText = statusText
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CashRunway())
+
+    val smartFinancialTip: StateFlow<String> = combine(summary, financialHealth, cashRunway) { summ, health, runway ->
+        when {
+            summ.owedByMe > summ.totalCash && summ.owedByMe > 0 ->
+                "⚠️ تنبيه تدفق نقدي: إجمالي ما عليك للموردين يفوق النقدية الحالية. بادر بتحصيل ديون العملاء البالغة (${DecimalFormat("#,##0").format(summ.owedToMe)} ${summ.currencySymbol}) لسداد الموردين بأمان."
+            summ.owedToMe > summ.totalCash * 1.5 && summ.owedToMe > 0 ->
+                "💡 نصيحة نمو: لديك مبالغ مستحقة كبيرة عند العملاء. جدول تذكيرات لطيفة لتحصيلها وتعزيز السيولة في الصناديق."
+            runway.runwayDays in 1..25 ->
+                "⏳ تنبيه أمان: السيولة المتوفرة تغطي النفقات لحوالي ${runway.runwayDays} يوماً فقط بناءً على معدل صرفك اليومي."
+            health.score >= 90 ->
+                "🌟 أداء ممتاز: نقدك يغطي التزاماتك بالكامل. يمكنك تخصيص جزء من الفائض للاستثمار أو التوسع التجاري."
+            else ->
+                "✅ نصيحة مالية: حافظ على تسجيل كل عملية فور حدوثها بالصوت أو النص لضمان دقة كشوفات الحساب وصافي الثروة."
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "سجل عملياتك بانتظام للحصول على تحليلات دقيقة")
+
+    fun getWhatsAppReminderMessage(party: Party, currencySymbol: String): String {
+        val amountStr = java.text.DecimalFormat("#,##0.##").format(party.balance)
+        return if (party.type == PartyType.CUSTOMER) {
+            "السلام عليكم ورحمة الله أخي الكريم ${party.name}،\nنود تذكيركم برصيد الحساب المستحق وقدره $amountStr $currencySymbol.\nشاكرين ومقدرين حسن تعاونكم الدائم معنا."
+        } else {
+            "السلام عليكم ورحمة الله أخي الكريم ${party.name}،\nبخصوص حسابنا لديكم، مسجل لدينا رصيد مستحق لكم قدره $amountStr $currencySymbol.\nنرجو التكرم بمطابقة الرصيد وترتيب دفعة السداد القادمة. مع خالص التقدير."
+        }
+    }
+
     fun clearFeedback() {
         _operationFeedback.value = null
     }
@@ -298,6 +395,64 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
             com.example.data.backup.LocalDatabaseBackupManager.checkAndTriggerAutoBackup(getApplication(), repository)
         }
         return result
+    }
+
+    fun processVoiceCommand(spokenText: String) {
+        if (spokenText.isBlank()) return
+        val trimmed = spokenText.trim()
+        viewModelScope.launch {
+            _isAiThinking.value = true
+            try {
+                val userEntity = AiChatMessageEntity(
+                    text = "🎙️ $trimmed",
+                    isUser = true
+                )
+                repository.saveAiChatMessage(userEntity)
+
+                val activeMems = repository.getActiveAiMemoriesList()
+                val historyTurns = repository.getRecentAiChatMessages(12).reversed().map { Pair(it.text, it.isUser) }
+
+                val result = assistant.processUserSpeechOrText(
+                    input = trimmed,
+                    repository = repository,
+                    existingParties = parties.value,
+                    existingBoxes = cashBoxes.value,
+                    existingCategories = expenseCategories.value,
+                    existingCurrencies = currencies.value,
+                    activeMemories = activeMems,
+                    conversationHistory = historyTurns
+                )
+
+                val aiEntity = AiChatMessageEntity(
+                    text = result.reply,
+                    isUser = false,
+                    isSuccess = result.isSuccess,
+                    actionType = result.actionType,
+                    relatedTransactionId = result.executedTransaction?.id,
+                    learnedMemoryText = result.learnedMemory?.fact
+                )
+                repository.saveAiChatMessage(aiEntity)
+
+                if (result.executedTransaction != null) {
+                    _operationFeedback.value = "تم تسجيل العملية صوتياً وتحديث الرصيد"
+                    com.example.data.backup.LocalDatabaseBackupManager.checkAndTriggerAutoBackup(getApplication(), repository)
+                } else if (result.actionType == "MANAGE_ENTITY") {
+                    _operationFeedback.value = "تم تنفيذ الأمر الصوتي بنجاح"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                repository.saveAiChatMessage(
+                    AiChatMessageEntity(
+                        text = "عذراً، حدث خطأ أثناء تنفيذ الأمر الصوتي: ${e.localizedMessage}",
+                        isUser = false,
+                        isSuccess = false,
+                        actionType = "ERROR"
+                    )
+                )
+            } finally {
+                _isAiThinking.value = false
+            }
+        }
     }
 
     suspend fun testGeminiConnection(apiKey: String, model: String): Result<String> {

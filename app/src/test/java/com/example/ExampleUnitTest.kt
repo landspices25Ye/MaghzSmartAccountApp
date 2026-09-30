@@ -160,12 +160,10 @@ class ExampleUnitTest {
     fun testAiAvailableModelsConfiguration() {
         val models = com.example.ai.AiPreferencesManager.AVAILABLE_MODELS
         assertEquals(3, models.size)
-        assertEquals("gemini-3.5-flash-lite", com.example.ai.AiPreferencesManager.DEFAULT_MODEL)
-        assertTrue(models.any { it.id == "gemini-3.5-flash-lite" })
-        assertTrue(models.any { it.id == "gemini-3.7-flash" })
-        assertTrue(models.any { it.id == "gemini-3.8-flash" })
-        assertFalse(models.any { it.id == "gemini-3.5-flash" })
-        assertFalse(models.any { it.id == "gemini-3.1-pro-preview" })
+        assertEquals("gemini-3.5-flash", com.example.ai.AiPreferencesManager.DEFAULT_MODEL)
+        assertTrue(models.any { it.id == "gemini-3.5-flash" })
+        assertTrue(models.any { it.id == "gemini-3.1-pro-preview" })
+        assertTrue(models.any { it.id == "gemini-3.1-flash-lite-preview" })
     }
 
     @Test

@@ -24,21 +24,30 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Tune
+import com.example.ui.theme.MoneyDebtBlue
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -78,8 +87,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.Party
 import com.example.data.model.PartyType
 import com.example.data.model.ReportTemplate
-import com.example.ui.components.TransactionCardItem
+import com.example.data.model.TransactionRecord
 import com.example.data.model.TransactionType
+import com.example.ui.components.TransactionCardItem
+import com.example.ui.components.TransactionDetailsDialog
 import com.example.export.ExcelExportHelper
 import com.example.export.PdfExportHelper
 import com.example.ui.components.SaveTemplateDialog
@@ -106,6 +117,8 @@ fun ReportsScreen(
     val cashBoxes by viewModel.cashBoxes.collectAsStateWithLifecycle()
     val parties by viewModel.parties.collectAsStateWithLifecycle()
     val reportTemplates by viewModel.reportTemplates.collectAsStateWithLifecycle()
+    val defaultCurrency by viewModel.defaultCurrency.collectAsStateWithLifecycle()
+    val currencySymbol = defaultCurrency?.symbol?.ifBlank { "ر.س" } ?: "ر.س"
 
     var selectedTabIndex by remember { mutableIntStateOf(if (preselectedParty != null) 1 else 0) } // 0: Custom Reports, 1: Statements & Daily
 
@@ -137,6 +150,11 @@ fun ReportsScreen(
     // --- Party Statement States for Tab 1 ---
     var selectedStatementPartyId by remember(preselectedParty) { mutableStateOf(preselectedParty?.id) }
     var partyDropdownExpanded by remember { mutableStateOf(false) }
+
+    // --- Trial Balance / All Parties States for Tab 2 ---
+    var trialSearchQuery by remember { mutableStateOf("") }
+    var trialFilterType by remember { mutableStateOf("ALL") } // ALL, CUSTOMERS, SUPPLIERS, NON_ZERO
+    var voucherTxForDetails by remember { mutableStateOf<TransactionRecord?>(null) }
 
     val partyMap = remember(parties) { parties.associateBy { it.id } }
     val boxMap = remember(cashBoxes) { cashBoxes.associateBy { it.id } }
@@ -315,12 +333,17 @@ fun ReportsScreen(
             Tab(
                 selected = selectedTabIndex == 0,
                 onClick = { selectedTabIndex = 0 },
-                text = { Text("التقارير المخصصة والقوالب", fontWeight = if (selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal) }
+                text = { Text("التقارير المخصصة", fontWeight = if (selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) }
             )
             Tab(
                 selected = selectedTabIndex == 1,
                 onClick = { selectedTabIndex = 1 },
-                text = { Text("كشوفات الحسابات واليومية", fontWeight = if (selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal) }
+                text = { Text("كشف حساب ويومية", fontWeight = if (selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) }
+            )
+            Tab(
+                selected = selectedTabIndex == 2,
+                onClick = { selectedTabIndex = 2 },
+                text = { Text("ميزان الأرصدة (مدين/دائن)", fontWeight = if (selectedTabIndex == 2) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) }
             )
         }
 
@@ -549,14 +572,14 @@ fun ReportsScreen(
                                         OutlinedTextField(
                                             value = minAmountText,
                                             onValueChange = { minAmountText = it },
-                                            label = { Text("الحد الأدنى (ر.س)") },
+                                            label = { Text("الحد الأدنى ($currencySymbol)") },
                                             modifier = Modifier.weight(1f),
                                             singleLine = true
                                         )
                                         OutlinedTextField(
                                             value = maxAmountText,
                                             onValueChange = { maxAmountText = it },
-                                            label = { Text("الحد الأقصى (ر.س)") },
+                                            label = { Text("الحد الأقصى ($currencySymbol)") },
                                             modifier = Modifier.weight(1f),
                                             singleLine = true
                                         )
@@ -597,7 +620,7 @@ fun ReportsScreen(
                                 Column {
                                     Text("المقبوضات (+)", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                     Text(
-                                        text = "${currencyFormat.format(totalIn)} ر.س",
+                                        text = "${currencyFormat.format(totalIn)} $currencySymbol",
                                         fontWeight = FontWeight.Bold,
                                         color = MoneyIncomeGreen,
                                         fontSize = 15.sp
@@ -606,7 +629,7 @@ fun ReportsScreen(
                                 Column {
                                     Text("المدفوعات (-)", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                     Text(
-                                        text = "${currencyFormat.format(totalOut)} ر.س",
+                                        text = "${currencyFormat.format(totalOut)} $currencySymbol",
                                         fontWeight = FontWeight.Bold,
                                         color = MoneyExpenseRed,
                                         fontSize = 15.sp
@@ -615,7 +638,7 @@ fun ReportsScreen(
                                 Column {
                                     Text("صافي الحركة", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                     Text(
-                                        text = "${currencyFormat.format(netBal)} ر.س",
+                                        text = "${currencyFormat.format(netBal)} $currencySymbol",
                                         fontWeight = FontWeight.Bold,
                                         color = if (netBal >= 0) MoneyIncomeGreen else MoneyExpenseRed,
                                         fontSize = 15.sp
@@ -739,12 +762,14 @@ fun ReportsScreen(
                             boxName = boxName,
                             timeString = SimpleDateFormat("dd MMM yyyy", Locale("ar")).format(Date(tx.timestamp)),
                             currencyFormat = currencyFormat,
+                            defaultCurrencySymbol = currencySymbol,
+                            onClick = { voucherTxForDetails = tx },
                             onDelete = { viewModel.deleteTransaction(tx) }
                         )
                     }
                 }
             }
-        } else {
+        } else if (selectedTabIndex == 1) {
             // === TAB 1: Statements & Daily Report ===
             LazyColumn(
                 modifier = Modifier
@@ -799,7 +824,7 @@ fun ReportsScreen(
                                 Column {
                                     Text("مقبوضات اليوم (+)", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                     Text(
-                                        text = "${currencyFormat.format(todayReceipts)} ر.س",
+                                        text = "${currencyFormat.format(todayReceipts)} $currencySymbol",
                                         fontWeight = FontWeight.Bold,
                                         color = MoneyIncomeGreen,
                                         fontSize = 15.sp
@@ -808,7 +833,7 @@ fun ReportsScreen(
                                 Column {
                                     Text("مدفوعات اليوم (-)", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                     Text(
-                                        text = "${currencyFormat.format(todayPayments)} ر.س",
+                                        text = "${currencyFormat.format(todayPayments)} $currencySymbol",
                                         fontWeight = FontWeight.Bold,
                                         color = MoneyExpenseRed,
                                         fontSize = 15.sp
@@ -818,7 +843,7 @@ fun ReportsScreen(
                                     Text("صافي حركة اليوم", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                     val netToday = todayReceipts - todayPayments
                                     Text(
-                                        text = "${currencyFormat.format(netToday)} ر.س",
+                                        text = "${currencyFormat.format(netToday)} $currencySymbol",
                                         fontWeight = FontWeight.Bold,
                                         color = if (netToday >= 0) MoneyIncomeGreen else MoneyExpenseRed,
                                         fontSize = 15.sp
@@ -877,7 +902,7 @@ fun ReportsScreen(
                                     parties.forEach { party ->
                                         val label = if (party.type == PartyType.CUSTOMER) "عميل" else "مورد"
                                         DropdownMenuItem(
-                                            text = { Text("${party.name} ($label - رصيد: ${party.balance} ر.س)") },
+                                            text = { Text("${party.name} ($label - رصيد: ${currencyFormat.format(party.balance)} $currencySymbol)") },
                                             onClick = {
                                                 selectedStatementPartyId = party.id
                                                 partyDropdownExpanded = false
@@ -890,33 +915,111 @@ fun ReportsScreen(
                             if (selectedParty != null) {
                                 Spacer(modifier = Modifier.height(14.dp))
                                 val isCustomer = selectedParty.type == PartyType.CUSTOMER
-                                val balanceDesc = if (isCustomer) {
-                                    if (selectedParty.balance >= 0) "ما لنا عنده (دين عليه): ${currencyFormat.format(selectedParty.balance)} ر.س"
-                                    else "ما له علينا: ${currencyFormat.format(-selectedParty.balance)} ر.س"
-                                } else {
-                                    if (selectedParty.balance >= 0) "ما له علينا (دين له): ${currencyFormat.format(selectedParty.balance)} ر.س"
-                                    else "ما لنا عنده: ${currencyFormat.format(-selectedParty.balance)} ر.س"
+
+                                // Calculate Debit, Credit, and progressive running balance
+                                val sortedPartyTx = partyTransactions.sortedBy { it.timestamp }
+                                var totalDebit = 0.0
+                                var totalCredit = 0.0
+
+                                val ledgerItems = sortedPartyTx.map { tx ->
+                                    var debit = 0.0
+                                    var credit = 0.0
+
+                                    if (isCustomer) {
+                                        when (tx.type) {
+                                            TransactionType.CUSTOMER_NEW_DEBIT, TransactionType.INCOME -> debit = tx.amount
+                                            TransactionType.CUSTOMER_RECEIPT -> credit = tx.amount
+                                            TransactionType.SETTLEMENT -> {
+                                                if (tx.amount >= 0) debit = tx.amount else credit = -tx.amount
+                                            }
+                                            else -> debit = tx.amount
+                                        }
+                                    } else {
+                                        when (tx.type) {
+                                            TransactionType.SUPPLIER_NEW_CREDIT, TransactionType.EXPENSE -> credit = tx.amount
+                                            TransactionType.SUPPLIER_PAYMENT -> debit = tx.amount
+                                            TransactionType.SETTLEMENT -> {
+                                                if (tx.amount >= 0) credit = tx.amount else debit = -tx.amount
+                                            }
+                                            else -> credit = tx.amount
+                                        }
+                                    }
+
+                                    totalDebit += debit
+                                    totalCredit += credit
+
+                                    Triple(tx, debit, credit)
                                 }
 
-                                Surface(
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
+                                val finalBalanceSide = if (isCustomer) {
+                                    if (selectedParty.balance >= 0) "دين عليه (لنا عنده)" else "دين له (علينا له)"
+                                } else {
+                                    if (selectedParty.balance >= 0) "دين له (علينا له)" else "دين عليه (لنا عنده)"
+                                }
+
+                                // 3 Metric Summary Cards: Debit, Credit, Balance
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Text(
-                                            text = balanceDesc,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = if (selectedParty.balance > 0) (if (isCustomer) MoneyIncomeGreen else MoneyExpenseRed) else Color.Gray
-                                        )
-                                        Text(
-                                            text = "عدد الحركات المسجلة: ${partyTransactions.size}",
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
+                                    Surface(
+                                        color = MoneyIncomeGreen.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Text("إجمالي مدين (عليه)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "${currencyFormat.format(totalDebit)} $currencySymbol",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = MoneyIncomeGreen
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = MoneyExpenseRed.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Text("إجمالي دائن (له)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "${currencyFormat.format(totalCredit)} $currencySymbol",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = MoneyExpenseRed
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = PrimaryGreen.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Text("الرصيد الصافي", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "${currencyFormat.format(Math.abs(selectedParty.balance))} $currencySymbol",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = PrimaryGreen
+                                            )
+                                        }
                                     }
                                 }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "حالة الرصيد النهائي: $finalBalanceSide • (${partyTransactions.size} حركة مسجلة)",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
 
                                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -930,7 +1033,8 @@ fun ReportsScreen(
                                                 context = context,
                                                 party = selectedParty,
                                                 transactions = partyTransactions,
-                                                cashBoxes = boxMap
+                                                cashBoxes = boxMap,
+                                                currencySymbol = currencySymbol
                                             )
                                             if (file != null) {
                                                 ExcelExportHelper.shareFile(context, file)
@@ -940,7 +1044,7 @@ fun ReportsScreen(
                                     ) {
                                         Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("إكسل الكشف", fontSize = 12.sp)
+                                        Text("إكسل (مدين/دائن/رصيد)", fontSize = 11.sp)
                                     }
 
                                     OutlinedButton(
@@ -950,7 +1054,8 @@ fun ReportsScreen(
                                                     activity = activity,
                                                     party = selectedParty,
                                                     transactions = partyTransactions,
-                                                    cashBoxes = boxMap
+                                                    cashBoxes = boxMap,
+                                                    currencySymbol = currencySymbol
                                                 )
                                             }
                                         },
@@ -958,7 +1063,538 @@ fun ReportsScreen(
                                     ) {
                                         Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("طباعة PDF", fontSize = 12.sp)
+                                        Text("طباعة PDF", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Party Ledger Transactions List (مدين / دائن / الرصيد)
+                if (selectedStatementPartyId != null) {
+                    val selectedParty = parties.firstOrNull { it.id == selectedStatementPartyId }
+                    if (selectedParty != null) {
+                        val isCustomer = selectedParty.type == PartyType.CUSTOMER
+                        val sortedPartyTx = transactions.filter { it.partyId == selectedParty.id }.sortedBy { it.timestamp }
+
+                        if (sortedPartyTx.isEmpty()) {
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(20.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("لا توجد حركات مسجلة لهذا الطرف حتى الآن", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        } else {
+                            item {
+                                Text(
+                                    text = "جدول حركات الحساب التفصيلي (${sortedPartyTx.size} حركة):",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            var runningProgBalance = 0.0
+                            items(sortedPartyTx.size) { index ->
+                                val tx = sortedPartyTx[index]
+                                val boxName = tx.cashBoxId?.let { boxMap[it]?.name }
+                                var debit = 0.0
+                                var credit = 0.0
+
+                                if (isCustomer) {
+                                    when (tx.type) {
+                                        TransactionType.CUSTOMER_NEW_DEBIT, TransactionType.INCOME -> {
+                                            debit = tx.amount
+                                            runningProgBalance += tx.amount
+                                        }
+                                        TransactionType.CUSTOMER_RECEIPT -> {
+                                            credit = tx.amount
+                                            runningProgBalance -= tx.amount
+                                        }
+                                        TransactionType.SETTLEMENT -> {
+                                            if (tx.amount >= 0) {
+                                                debit = tx.amount
+                                                runningProgBalance += tx.amount
+                                            } else {
+                                                credit = -tx.amount
+                                                runningProgBalance -= -tx.amount
+                                            }
+                                        }
+                                        else -> {
+                                            debit = tx.amount
+                                            runningProgBalance += tx.amount
+                                        }
+                                    }
+                                } else {
+                                    when (tx.type) {
+                                        TransactionType.SUPPLIER_NEW_CREDIT, TransactionType.EXPENSE -> {
+                                            credit = tx.amount
+                                            runningProgBalance += tx.amount
+                                        }
+                                        TransactionType.SUPPLIER_PAYMENT -> {
+                                            debit = tx.amount
+                                            runningProgBalance -= tx.amount
+                                        }
+                                        TransactionType.SETTLEMENT -> {
+                                            if (tx.amount >= 0) {
+                                                credit = tx.amount
+                                                runningProgBalance += tx.amount
+                                            } else {
+                                                debit = -tx.amount
+                                                runningProgBalance -= -tx.amount
+                                            }
+                                        }
+                                        else -> {
+                                            credit = tx.amount
+                                            runningProgBalance += tx.amount
+                                        }
+                                    }
+                                }
+
+                                val balanceSide = if (isCustomer) {
+                                    if (runningProgBalance >= 0) "عليه" else "له"
+                                } else {
+                                    if (runningProgBalance >= 0) "له" else "عليه"
+                                }
+
+                                PartyStatementLedgerItem(
+                                    tx = tx,
+                                    index = index + 1,
+                                    debit = debit,
+                                    credit = credit,
+                                    runningBalance = runningProgBalance,
+                                    balanceSide = balanceSide,
+                                    boxName = boxName,
+                                    currencySymbol = currencySymbol,
+                                    currencyFormat = currencyFormat,
+                                    onClick = { voucherTxForDetails = tx }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // === TAB 2: Trial Balance / All Parties Balances (ميزان الأرصدة الشامل - مدين / دائن / رصيد) ===
+            val txByParty = remember(transactions) { transactions.groupBy { it.partyId } }
+
+            val totalCustomersDebit = remember(parties) {
+                parties.filter { it.type == PartyType.CUSTOMER && it.balance > 0 }.sumOf { it.balance }
+            }
+            val totalSuppliersCredit = remember(parties) {
+                parties.filter { it.type == PartyType.SUPPLIER && it.balance > 0 }.sumOf { it.balance }
+            }
+            val netMarketDebtPosition = remember(totalCustomersDebit, totalSuppliersCredit) {
+                totalCustomersDebit - totalSuppliersCredit
+            }
+
+            val filteredTrialParties = remember(parties, trialSearchQuery, trialFilterType) {
+                parties.filter { party ->
+                    when (trialFilterType) {
+                        "CUSTOMERS" -> party.type == PartyType.CUSTOMER
+                        "SUPPLIERS" -> party.type == PartyType.SUPPLIER
+                        "NON_ZERO" -> party.balance != 0.0
+                        else -> true
+                    }
+                }.filter { party ->
+                    trialSearchQuery.isBlank() ||
+                        party.name.contains(trialSearchQuery, ignoreCase = true) ||
+                        party.phone.contains(trialSearchQuery)
+                }.sortedWith(compareBy({ it.type }, { -Math.abs(it.balance) }))
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header KPIs Summary Card
+                item {
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "ميزان أرصدة الأطراف والديون ⚖️",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = "${parties.size} طرف مسجل",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(
+                                    color = MoneyIncomeGreen.copy(alpha = 0.08f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text("ديون العملاء (لنا عندهم)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "${currencyFormat.format(totalCustomersDebit)} $currencySymbol",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = MoneyIncomeGreen
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    color = MoneyExpenseRed.copy(alpha = 0.08f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text("التزامات الموردين (علينا)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "${currencyFormat.format(totalSuppliersCredit)} $currencySymbol",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = MoneyExpenseRed
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    color = PrimaryGreen.copy(alpha = 0.08f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text("صافي مركز الديون", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "${currencyFormat.format(Math.abs(netMarketDebtPosition))} $currencySymbol",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = if (netMarketDebtPosition >= 0) PrimaryGreen else MoneyExpenseRed
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Export buttons for the entire Trial Balance
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        val file = ExcelExportHelper.exportTrialBalanceToExcel(
+                                            context = context,
+                                            parties = parties,
+                                            transactions = transactions,
+                                            currencySymbol = currencySymbol
+                                        )
+                                        if (file != null) {
+                                            ExcelExportHelper.shareFile(context, file)
+                                        } else {
+                                            Toast.makeText(context, "فشل إنشاء ملف الإكسل", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
+                                ) {
+                                    Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("تصدير إكسل (CSV)", fontSize = 11.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        if (activity != null) {
+                                            PdfExportHelper.printTrialBalanceReport(
+                                                activity = activity,
+                                                parties = parties,
+                                                transactions = transactions,
+                                                currencySymbol = currencySymbol
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("طباعة PDF رسمي", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Search & Filter Toolbar
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = trialSearchQuery,
+                            onValueChange = { trialSearchQuery = it },
+                            placeholder = { Text("بحث باسم الطرف أو الهاتف...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = PrimaryGreen) },
+                            trailingIcon = {
+                                if (trialSearchQuery.isNotBlank()) {
+                                    IconButton(onClick = { trialSearchQuery = "" }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "مسح")
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val filters = listOf(
+                                "ALL" to "الكل (${parties.size})",
+                                "CUSTOMERS" to "العملاء (مدينون)",
+                                "SUPPLIERS" to "الموردين (دائنون)",
+                                "NON_ZERO" to "الأرصدة النشطة"
+                            )
+                            items(filters) { (type, label) ->
+                                FilterChip(
+                                    selected = trialFilterType == type,
+                                    onClick = { trialFilterType = type },
+                                    label = { Text(label, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // List of parties in Trial Balance with Debit, Credit, and Balance
+                if (filteredTrialParties.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (trialSearchQuery.isNotBlank()) "لم يتم العثور على أطراف مطابقة للبحث" else "لا توجد أطراف مسجلة بعد",
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(filteredTrialParties, key = { it.id }) { party ->
+                        val isCustomer = party.type == PartyType.CUSTOMER
+                        val partyTx = txByParty[party.id] ?: emptyList()
+
+                        var partyDebit = 0.0
+                        var partyCredit = 0.0
+
+                        partyTx.forEach { tx ->
+                            if (isCustomer) {
+                                when (tx.type) {
+                                    TransactionType.CUSTOMER_NEW_DEBIT, TransactionType.INCOME -> partyDebit += tx.amount
+                                    TransactionType.CUSTOMER_RECEIPT -> partyCredit += tx.amount
+                                    TransactionType.SETTLEMENT -> if (tx.amount >= 0) partyDebit += tx.amount else partyCredit += -tx.amount
+                                    else -> partyDebit += tx.amount
+                                }
+                            } else {
+                                when (tx.type) {
+                                    TransactionType.SUPPLIER_NEW_CREDIT, TransactionType.EXPENSE -> partyCredit += tx.amount
+                                    TransactionType.SUPPLIER_PAYMENT -> partyDebit += tx.amount
+                                    TransactionType.SETTLEMENT -> if (tx.amount >= 0) partyCredit += tx.amount else partyDebit += -tx.amount
+                                    else -> partyCredit += tx.amount
+                                }
+                            }
+                        }
+
+                        val statusLabel = when {
+                            party.balance > 0 -> if (isCustomer) "دين عليه (لنا عنده)" else "دين له (علينا له)"
+                            party.balance < 0 -> if (isCustomer) "دين له (علينا له)" else "دين عليه (لنا عنده)"
+                            else -> "خالص (0.00)"
+                        }
+
+                        val statusColor = when {
+                            party.balance > 0 -> if (isCustomer) MoneyIncomeGreen else MoneyExpenseRed
+                            party.balance < 0 -> if (isCustomer) MoneyExpenseRed else MoneyIncomeGreen
+                            else -> Color.Gray
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            color = if (isCustomer) PrimaryGreen.copy(alpha = 0.12f) else MoneyDebtBlue.copy(alpha = 0.12f),
+                                            shape = CircleShape,
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = if (isCustomer) Icons.Default.Person else Icons.Default.Store,
+                                                    contentDescription = null,
+                                                    tint = if (isCustomer) PrimaryGreen else MoneyDebtBlue,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(party.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            Text(
+                                                text = if (isCustomer) "عميل ${if (party.phone.isNotBlank()) "• ${party.phone}" else ""}" else "مورد ${if (party.phone.isNotBlank()) "• ${party.phone}" else ""}",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        color = statusColor.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = statusLabel,
+                                            fontSize = 10.sp,
+                                            color = statusColor,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Debit, Credit, Balance Row
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text("إجمالي مدين (عليه)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                        Text(
+                                            text = "${currencyFormat.format(partyDebit)} $currencySymbol",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = MoneyIncomeGreen
+                                        )
+                                    }
+                                    Column {
+                                        Text("إجمالي دائن (له)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                        Text(
+                                            text = "${currencyFormat.format(partyCredit)} $currencySymbol",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = MoneyExpenseRed
+                                        )
+                                    }
+                                    Column {
+                                        Text("الرصيد الصافي", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                        Text(
+                                            text = "${currencyFormat.format(Math.abs(party.balance))} $currencySymbol",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = statusColor
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Quick Actions: View Statement in Tab 1, WhatsApp, Excel
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            selectedStatementPartyId = party.id
+                                            selectedTabIndex = 1
+                                        }
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp), tint = PrimaryGreen)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("كشف الحساب التفصيلي", fontSize = 11.sp, color = PrimaryGreen, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        if (party.phone.isNotBlank()) {
+                                            IconButton(
+                                                onClick = { openPartyWhatsApp(context, party, currencySymbol) },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(Icons.Default.Chat, contentDescription = "واتساب", tint = Color(0xFF25D366), modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+
+                                        IconButton(
+                                            onClick = {
+                                                val file = ExcelExportHelper.exportAccountStatementToExcel(
+                                                    context = context,
+                                                    party = party,
+                                                    transactions = partyTx,
+                                                    cashBoxes = boxMap,
+                                                    currencySymbol = currencySymbol
+                                                )
+                                                if (file != null) {
+                                                    ExcelExportHelper.shareFile(context, file)
+                                                }
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(Icons.Default.TableChart, contentDescription = "إكسل", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                        }
                                     }
                                 }
                             }
@@ -991,6 +1627,19 @@ fun ReportsScreen(
                 viewModel.saveReportTemplate(template)
                 showSaveTemplateDialog = false
             }
+        )
+    }
+
+    voucherTxForDetails?.let { tx ->
+        val party = parties.firstOrNull { it.id == tx.partyId }
+        val box = cashBoxes.firstOrNull { it.id == tx.cashBoxId }
+        TransactionDetailsDialog(
+            transaction = tx,
+            party = party,
+            cashBox = box,
+            currencySymbol = currencySymbol,
+            onDelete = { viewModel.deleteTransaction(tx) },
+            onDismiss = { voucherTxForDetails = null }
         )
     }
 }
@@ -1046,4 +1695,152 @@ private fun showDatePicker(context: android.content.Context, onDateSelected: (Lo
         cal.get(Calendar.MONTH),
         cal.get(Calendar.DAY_OF_MONTH)
     ).show()
+}
+
+@Composable
+fun PartyStatementLedgerItem(
+    tx: TransactionRecord,
+    index: Int,
+    debit: Double,
+    credit: Double,
+    runningBalance: Double,
+    balanceSide: String,
+    boxName: String?,
+    currencySymbol: String,
+    currencyFormat: DecimalFormat,
+    onClick: (() -> Unit)? = null
+) {
+    val cardModifier = if (onClick != null) {
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
+    Card(
+        modifier = cardModifier,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = PrimaryGreen.copy(alpha = 0.12f),
+                        shape = CircleShape,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = "$index", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale("ar")).format(Date(tx.timestamp)),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = tx.type.titleAr,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = tx.description.ifBlank { tx.type.titleAr },
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            if (!boxName.isNullOrBlank() && boxName != "-") {
+                Text(
+                    text = "الصندوق: $boxName",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Debit, Credit, Running Balance Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Debit (عليه)
+                Column(horizontalAlignment = Alignment.Start) {
+                    Text("مدين (عليه)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = if (debit > 0) "+${currencyFormat.format(debit)} $currencySymbol" else "-",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (debit > 0) MoneyIncomeGreen else Color.Gray
+                    )
+                }
+
+                // Credit (له)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("دائن (له)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = if (credit > 0) "-${currencyFormat.format(credit)} $currencySymbol" else "-",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (credit > 0) MoneyExpenseRed else Color.Gray
+                    )
+                }
+
+                // Balance (الرصيد بعد الحركة)
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("الرصيد بعد الحركة", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = "${currencyFormat.format(Math.abs(runningBalance))} $currencySymbol ($balanceSide)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun openPartyWhatsApp(context: android.content.Context, party: Party, currencySymbol: String) {
+    val amountFormatted = DecimalFormat("#,##0.##").format(Math.abs(party.balance))
+    val isCustomer = party.type == PartyType.CUSTOMER
+    val message = if (isCustomer) {
+        "السلام عليكم ورحمة الله أخي الكريم ${party.name}،\nنود إحاطتكم بأن رصيد الحساب المسجل لدينا هو $amountFormatted $currencySymbol (${if (party.balance >= 0) "مستحق عليكم" else "لكم علينا"}).\nشاكرين ومقدرين حسن تعاونكم الدائم معنا."
+    } else {
+        "السلام عليكم ورحمة الله أخي الكريم ${party.name}،\nبخصوص حسابنا لديكم، مسجل لدينا رصيد قدره $amountFormatted $currencySymbol (${if (party.balance >= 0) "مستحق لكم علينا" else "لنا لديكم"}).\nشاكرين ومقدرين حسن تعاونكم الدائم."
+    }
+
+    try {
+        val cleanPhone = party.phone.replace(Regex("[^0-9+]"), "")
+        val uri = Uri.parse("https://api.whatsapp.com/send?phone=$cleanPhone&text=${Uri.encode(message)}")
+        val intent = Intent(Intent.ACTION_VIEW, uri)
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "تعذر فتح تطبيق واتساب", Toast.LENGTH_SHORT).show()
+    }
 }

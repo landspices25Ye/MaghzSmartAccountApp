@@ -136,6 +136,17 @@ fun MainAppScreen(viewModel: AccountingViewModel) {
                     },
                     actions = {
                         IconButton(
+                            onClick = { currentScreen = Screen.REPORTS },
+                            modifier = Modifier.testTag("topbar_reports_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Assessment,
+                                contentDescription = "التقارير",
+                                tint = if (currentScreen == Screen.REPORTS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        IconButton(
                             onClick = {
                                 val nextMode = when (currentThemeMode) {
                                     com.example.ui.theme.AppThemeMode.LIGHT -> com.example.ui.theme.AppThemeMode.DARK
@@ -296,11 +307,10 @@ fun MainAppScreen(viewModel: AccountingViewModel) {
                 ) {
                     val screens = listOf(
                         Screen.DASHBOARD,
+                        Screen.TRANSACTIONS,
                         Screen.PARTIES,
                         Screen.CASH_BOXES,
-                        Screen.TRANSACTIONS,
-                        Screen.AI_CHAT,
-                        Screen.REPORTS
+                        Screen.AI_CHAT
                     )
 
                     screens.forEach { screen ->
@@ -308,9 +318,7 @@ fun MainAppScreen(viewModel: AccountingViewModel) {
                             selected = currentScreen == screen,
                             onClick = {
                                 currentScreen = screen
-                                if (screen != Screen.REPORTS) {
-                                    selectedPartyForStatement = null
-                                }
+                                selectedPartyForStatement = null
                             },
                             icon = { Icon(screen.icon, contentDescription = screen.title) },
                             label = { Text(screen.title, maxLines = 1) },
