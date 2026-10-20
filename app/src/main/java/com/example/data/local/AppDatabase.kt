@@ -17,6 +17,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+import com.example.data.model.JournalEntry
+import com.example.data.model.JournalLineItem
+import com.example.data.local.JournalEntryDao
+
 @Database(
     entities = [
         CashBox::class,
@@ -26,9 +30,11 @@ import kotlinx.coroutines.launch
         AppCurrency::class,
         ExpenseCategory::class,
         AiMemoryFact::class,
-        AiChatMessageEntity::class
+        AiChatMessageEntity::class,
+        JournalEntry::class,
+        JournalLineItem::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -40,6 +46,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun expenseCategoryDao(): ExpenseCategoryDao
     abstract fun aiMemoryDao(): AiMemoryDao
     abstract fun aiChatMessageDao(): AiChatMessageDao
+    abstract fun journalEntryDao(): JournalEntryDao
 
     companion object {
         @Volatile

@@ -130,6 +130,7 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
     val expenseCategories: StateFlow<List<ExpenseCategory>>
     val aiMemories: StateFlow<List<AiMemoryFact>>
     val activeMemoriesCount: StateFlow<Int>
+    val journalEntries: StateFlow<List<com.example.data.model.JournalEntry>>
 
     val defaultCurrency: StateFlow<AppCurrency?>
     val defaultCashBox: StateFlow<CashBox?>
@@ -141,6 +142,21 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _operationFeedback = MutableStateFlow<String?>(null)
     val operationFeedback: StateFlow<String?> = _operationFeedback.asStateFlow()
+
+    private val _trialBalance = MutableStateFlow<List<com.example.data.model.TrialBalanceRow>>(emptyList())
+    val trialBalance: StateFlow<List<com.example.data.model.TrialBalanceRow>> = _trialBalance.asStateFlow()
+
+    private val _financialStatementSummary = MutableStateFlow<com.example.data.model.FinancialStatementSummary?>(null)
+    val financialStatementSummary: StateFlow<com.example.data.model.FinancialStatementSummary?> = _financialStatementSummary.asStateFlow()
+
+    private val _journalEntriesWithLines = MutableStateFlow<List<com.example.data.model.JournalEntryWithLines>>(emptyList())
+    val journalEntriesWithLines: StateFlow<List<com.example.data.model.JournalEntryWithLines>> = _journalEntriesWithLines.asStateFlow()
+
+    private val _auditReport = MutableStateFlow<com.example.domain.AuditReportResult?>(null)
+    val auditReport: StateFlow<com.example.domain.AuditReportResult?> = _auditReport.asStateFlow()
+
+    private val _isAuditing = MutableStateFlow(false)
+    val isAuditing: StateFlow<Boolean> = _isAuditing.asStateFlow()
 
     init {
         val database = AppDatabase.getInstance(application)
@@ -205,6 +221,12 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
             0
         )
 
+        journalEntries = repository.allJournalEntries.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
         chatMessages = repository.allAiChatMessages.map { list ->
             if (list.isEmpty()) {
                 listOf(
@@ -242,7 +264,43 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
                 )
             }
 
+            refreshFinancialStatements()
             com.example.data.backup.LocalDatabaseBackupManager.checkAndTriggerAutoBackup(application, repository)
+        }
+    }
+
+    fun refreshFinancialStatements() {
+        viewModelScope.launch {
+            _trialBalance.value = repository.getTrialBalance()
+            _financialStatementSummary.value = repository.getFinancialSummary()
+            _journalEntriesWithLines.value = repository.getJournalEntriesWithLines()
+        }
+    }
+
+    fun runComprehensiveAudit() {
+        viewModelScope.launch {
+            _isAuditing.value = true
+            try {
+                _auditReport.value = repository.runAudit()
+            } finally {
+                _isAuditing.value = false
+            }
+        }
+    }
+
+    fun clearAuditReport() {
+        _auditReport.value = null
+    }
+
+    fun reconcileCashBox(cashBoxId: Long, physicalBalance: Double, note: String = "تسوية جرد فعلي") {
+        viewModelScope.launch {
+            val tx = repository.reconcileCashBox(cashBoxId, physicalBalance, note)
+            if (tx != null) {
+                _operationFeedback.value = "تمت تسوية رصيد الصندوق بنجاح وتوليد قيد التسوية"
+                refreshFinancialStatements()
+            } else {
+                _operationFeedback.value = "رصيد الصندوق مطابق للجرد الفعلي ولا يحتاج لتسوية"
+            }
         }
     }
 
@@ -612,6 +670,7 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
                 timestamp = System.currentTimeMillis()
             )
             repository.recordTransaction(tx)
+            refreshFinancialStatements()
             _operationFeedback.value = "تم تسجيل عملية ${type.titleAr} بنجاح"
             com.example.data.backup.LocalDatabaseBackupManager.checkAndTriggerAutoBackup(getApplication(), repository)
         }
@@ -847,6 +906,7 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
     fun deleteTransaction(tx: TransactionRecord) {
         viewModelScope.launch {
             repository.deleteTransaction(tx)
+            refreshFinancialStatements()
             _operationFeedback.value = "تم حذف العملية وإرجاع الأرصدة لسابقها"
             com.example.data.backup.LocalDatabaseBackupManager.checkAndTriggerAutoBackup(getApplication(), repository)
         }

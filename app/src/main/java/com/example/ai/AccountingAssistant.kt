@@ -166,6 +166,75 @@ class AccountingAssistant(
             )
         }
 
+        // 3.1 Comprehensive Audit Engine (التدقيق المالي الشامل وكشف الأخطاء)
+        if (intent.action == "AUDIT") {
+            val auditResult = repository.runAudit()
+            val auditStatus = if (auditResult.isBalanced) "✅ ميزان المراجعة متوازن تماماً (${currencyFormat.format(auditResult.totalDebit)} $defaultCurrencySymbol)" else "⚠️ فارق غير متوازن: ${currencyFormat.format(auditResult.debitCreditDifference)} $defaultCurrencySymbol"
+            val anomalyText = if (auditResult.anomalies.isEmpty()) {
+                "🎉 الفحص المالي ممتاز: لا توجد أي أخطاء أو شذوذ حسابي أو صناديق مكشوفة!"
+            } else {
+                "🔍 تم رصد الملاحظات التالية:\n" + auditResult.anomalies.mapIndexed { idx, an ->
+                    "${idx + 1}. [${an.severity.titleAr}] ${an.title}:\n   ${an.description}\n   💡 الإجراء المقترح: ${an.suggestedFix}"
+                }.joinToString("\n\n")
+            }
+            val auditReply = """
+                📋 تقرير التدقيق المالي الآلي (Audit Report):
+                • الصناديق المفحوصة: ${auditResult.totalCashBoxesChecked}
+                • الأطراف (العملاء والموردين): ${auditResult.totalPartiesChecked}
+                • الحركات التشغيلية: ${auditResult.totalTransactionsAudited}
+                • القيود المحاسبية المزدوجة: ${auditResult.totalJournalEntriesAudited}
+                • توازن دفتر اليومية: $auditStatus
+
+                $anomalyText
+            """.trimIndent()
+            return AssistantResult(
+                reply = auditReply,
+                isSuccess = true,
+                learnedMemory = savedMemoryFact,
+                actionType = "AUDIT"
+            )
+        }
+
+        // 3.2 Cash Box Reconciliation (تسوية ومطابقة الصندوق الفعلي)
+        if (intent.action == "RECONCILE") {
+            val box = existingBoxes.firstOrNull { it.name.equals(intent.cashBoxName, ignoreCase = true) } ?: defaultBox
+            val actual = intent.amount
+            val tx = repository.reconcileCashBox(box.id, actual, "تسوية جرد فعلي عبر المساعد الذكي")
+            val replyMsg = if (tx != null) {
+                "✅ تمت تسوية رصيد '${box.name}' بنجاح ليصبح مطابقاً للجرد الفعلي: ${currencyFormat.format(actual)} $defaultCurrencySymbol.\nتم إنشاء قيد التسوية وفروقات الجرد آلياً في دفتر اليومية."
+            } else {
+                "ℹ️ رصيد '${box.name}' مطابق بالفعل للجرد (${currencyFormat.format(box.balance)} $defaultCurrencySymbol) ولا يوجد أي فارق عجز أو فائض يحتاج لتسوية."
+            }
+            return AssistantResult(
+                reply = replyMsg,
+                executedTransaction = tx,
+                isSuccess = true,
+                learnedMemory = savedMemoryFact,
+                actionType = "RECONCILE"
+            )
+        }
+
+        // 3.3 Financial Statements (القوائم المالية وميزان المراجعة)
+        if (intent.action == "FINANCIAL_STATEMENTS" || intent.action == "TRIAL_BALANCE") {
+            val summary = repository.getFinancialSummary()
+            val statementsReply = """
+                📊 القوائم والتقارير المالية (نظام القيد المزدوج):
+                • إجمالي الأصول المتداولة: ${currencyFormat.format(summary.totalAssets)} $defaultCurrencySymbol
+                • إجمالي الخصوم والالتزامات: ${currencyFormat.format(summary.totalLiabilities)} $defaultCurrencySymbol
+                • رأس المال العامل (الأصول - الخصوم): ${currencyFormat.format(summary.workingCapital)} $defaultCurrencySymbol
+                • الإيرادات والمبيعات: ${currencyFormat.format(summary.totalRevenue)} $defaultCurrencySymbol
+                • المصروفات التشغيلية: ${currencyFormat.format(summary.totalExpenses)} $defaultCurrencySymbol
+                • صافي الربح / الخسارة: ${currencyFormat.format(summary.netProfit)} $defaultCurrencySymbol
+                • نسبة السيولة والتغطية: ${String.format("%.2f", summary.liquidityRatio)}
+            """.trimIndent()
+            return AssistantResult(
+                reply = statementsReply,
+                isSuccess = true,
+                learnedMemory = savedMemoryFact,
+                actionType = "REPORT"
+            )
+        }
+
         // 3.4 Entity Management (Add / Update / Delete Parties, Cash Boxes, Expense Categories, Transfers, Currencies, Transactions)
         val isEntityAction = intent.action == "MANAGE_ENTITY" ||
                 !intent.entityOperation.isNullOrBlank() ||

@@ -20,6 +20,7 @@ class AccountingRepository(val database: AppDatabase) {
     private val expenseCategoryDao = database.expenseCategoryDao()
     private val aiMemoryDao = database.aiMemoryDao()
     private val aiChatMessageDao = database.aiChatMessageDao()
+    private val journalEntryDao = database.journalEntryDao()
 
     // Flows
     val allCashBoxes: Flow<List<CashBox>> = cashBoxDao.getAllCashBoxesFlow()
@@ -32,6 +33,7 @@ class AccountingRepository(val database: AppDatabase) {
     val allAiMemories: Flow<List<com.example.data.model.AiMemoryFact>> = aiMemoryDao.getAllMemoriesFlow()
     val allAiChatMessages: Flow<List<com.example.data.model.AiChatMessageEntity>> = aiChatMessageDao.getAllMessagesFlow()
     val activeAiMemoriesCount: Flow<Int> = aiMemoryDao.getActiveCountFlow()
+    val allJournalEntries: Flow<List<com.example.data.model.JournalEntry>> = journalEntryDao.getAllJournalEntriesFlow()
 
     // AI Memories
     suspend fun getAllAiMemoriesList(): List<com.example.data.model.AiMemoryFact> = aiMemoryDao.getAllMemories()
@@ -224,13 +226,91 @@ class AccountingRepository(val database: AppDatabase) {
     suspend fun getTransactionsForParty(partyId: Long): List<TransactionRecord> = transactionDao.getTransactionsForParty(partyId)
     suspend fun getTransactionsForCashBox(cashBoxId: Long): List<TransactionRecord> = transactionDao.getTransactionsForCashBox(cashBoxId)
 
+    // Journal Entry Queries
+    suspend fun getAllJournalEntries(): List<com.example.data.model.JournalEntry> = journalEntryDao.getAllJournalEntriesList()
+    suspend fun getAllJournalLines(): List<com.example.data.model.JournalLineItem> = journalEntryDao.getAllLineItemsList()
+    suspend fun getLinesForJournalEntry(entryId: Long): List<com.example.data.model.JournalLineItem> = journalEntryDao.getLinesForEntry(entryId)
+    suspend fun getJournalEntriesWithLines(): List<com.example.data.model.JournalEntryWithLines> {
+        val entries = journalEntryDao.getAllJournalEntriesList()
+        val allLines = journalEntryDao.getAllLineItemsList().groupBy { it.journalEntryId }
+        return entries.map { entry ->
+            com.example.data.model.JournalEntryWithLines(
+                entry = entry,
+                lines = allLines[entry.id] ?: emptyList()
+            )
+        }
+    }
+
+    suspend fun getTrialBalance(): List<com.example.data.model.TrialBalanceRow> {
+        val allLines = journalEntryDao.getAllLineItemsList()
+        return com.example.domain.DoubleEntryEngine.computeTrialBalance(allLines)
+    }
+
+    suspend fun getFinancialSummary(): com.example.data.model.FinancialStatementSummary {
+        val allLines = journalEntryDao.getAllLineItemsList()
+        return com.example.domain.DoubleEntryEngine.computeFinancialSummary(allLines)
+    }
+
+    suspend fun runAudit(): com.example.domain.AuditReportResult {
+        val cashBoxes = cashBoxDao.getAllCashBoxes()
+        val parties = partyDao.getAllParties()
+        val transactions = transactionDao.getAllTransactionsList()
+        val journalEntries = journalEntryDao.getAllJournalEntriesList()
+        val allLines = journalEntryDao.getAllLineItemsList()
+        return com.example.domain.AccountingAuditEngine.runComprehensiveAudit(
+            cashBoxes = cashBoxes,
+            parties = parties,
+            transactions = transactions,
+            journalEntries = journalEntries,
+            allLineItems = allLines
+        )
+    }
+
+    suspend fun reconcileCashBox(cashBoxId: Long, actualPhysicalBalance: Double, note: String = "تسوية جرد فعلي"): TransactionRecord? {
+        val cashBox = cashBoxDao.getCashBoxById(cashBoxId) ?: return null
+        val diff = actualPhysicalBalance - cashBox.balance
+        if (Math.abs(diff) < 0.001) return null
+
+        val record = TransactionRecord(
+            type = TransactionType.SETTLEMENT,
+            amount = Math.abs(diff),
+            cashBoxId = cashBoxId,
+            description = "$note: فارق ${if (diff > 0) "فائض" else "عجز"} بقيمة ${String.format("%.2f", Math.abs(diff))}",
+            currency = ""
+        )
+        val id = recordTransaction(record)
+        // Ensure box balance is exactly the counted physical balance
+        cashBoxDao.setBalance(cashBoxId, actualPhysicalBalance)
+        return record.copy(id = id)
+    }
+
     /**
-     * Records a financial transaction and applies balance adjustments atomically.
+     * Records a financial transaction and applies balance adjustments + generates balanced double-entry voucher atomically.
      */
     suspend fun recordTransaction(transaction: TransactionRecord): Long {
         return database.withTransaction {
             val txId = transactionDao.insert(transaction)
-            applyBalanceChanges(transaction, isRevert = false)
+            val savedTx = transaction.copy(id = txId)
+            applyBalanceChanges(savedTx, isRevert = false)
+
+            // Auto-generate double-entry voucher
+            val cashBox = savedTx.cashBoxId?.let { cashBoxDao.getCashBoxById(it) }
+            val targetBox = savedTx.targetCashBoxId?.let { cashBoxDao.getCashBoxById(it) }
+            val party = savedTx.partyId?.let { partyDao.getPartyById(it) }
+
+            val (jEntry, lines) = com.example.domain.DoubleEntryEngine.createJournalEntryForTransaction(
+                transaction = savedTx,
+                cashBoxName = cashBox?.name ?: "الصندوق الرئيسي",
+                targetCashBoxName = targetBox?.name,
+                partyName = party?.name,
+                partyType = party?.type,
+                currencySymbol = savedTx.currency.ifBlank { "ر.س" }
+            )
+
+            val jEntryId = journalEntryDao.insertEntry(jEntry)
+            val updatedLines = lines.map { it.copy(journalEntryId = jEntryId) }
+            journalEntryDao.insertLineItems(updatedLines)
+
             txId
         }
     }
@@ -238,6 +318,7 @@ class AccountingRepository(val database: AppDatabase) {
     suspend fun deleteTransaction(transaction: TransactionRecord) {
         database.withTransaction {
             transactionDao.delete(transaction)
+            journalEntryDao.deleteEntryBySourceTransactionId(transaction.id)
             applyBalanceChanges(transaction, isRevert = true)
         }
     }
@@ -248,41 +329,33 @@ class AccountingRepository(val database: AppDatabase) {
 
         when (tx.type) {
             TransactionType.CUSTOMER_RECEIPT -> {
-                // Receipt from customer: cash increases, customer debt decreases
                 tx.cashBoxId?.let { cashBoxDao.updateBalance(it, amount) }
                 tx.partyId?.let { partyDao.updateBalance(it, -amount) }
             }
             TransactionType.SUPPLIER_PAYMENT -> {
-                // Payment to supplier: cash decreases, supplier debt decreases
                 tx.cashBoxId?.let { cashBoxDao.updateBalance(it, -amount) }
                 tx.partyId?.let { partyDao.updateBalance(it, -amount) }
             }
             TransactionType.CUSTOMER_NEW_DEBIT -> {
-                // Customer owes more
                 tx.partyId?.let { partyDao.updateBalance(it, amount) }
-                // If money was paid out of cash box (e.g. loan/cash debt), decrease cash box
                 tx.cashBoxId?.let { cashBoxDao.updateBalance(it, -amount) }
             }
             TransactionType.SUPPLIER_NEW_CREDIT -> {
-                // We owe supplier more
                 tx.partyId?.let { partyDao.updateBalance(it, amount) }
             }
             TransactionType.EXPENSE -> {
-                // Expense: cash decreases
                 tx.cashBoxId?.let { cashBoxDao.updateBalance(it, -amount) }
             }
             TransactionType.INCOME -> {
-                // Income: cash increases
                 tx.cashBoxId?.let { cashBoxDao.updateBalance(it, amount) }
             }
             TransactionType.TRANSFER -> {
-                // Transfer between boxes: source decreases, target increases
                 tx.cashBoxId?.let { cashBoxDao.updateBalance(it, -amount) }
                 tx.targetCashBoxId?.let { cashBoxDao.updateBalance(it, amount) }
             }
             TransactionType.SETTLEMENT -> {
-                // Settlement/Discount directly affecting party balance
                 tx.partyId?.let { partyDao.updateBalance(it, -amount) }
+                tx.cashBoxId?.let { cashBoxDao.updateBalance(it, amount) }
             }
         }
     }

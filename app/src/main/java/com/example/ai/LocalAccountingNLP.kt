@@ -78,6 +78,34 @@ object LocalAccountingNLP {
         val amount = extractAmount(text)
         val extractedCurrency = extractCurrency(text).ifBlank { defaultCurrencySymbol }
 
+        // 0.1 Audit Trigger (التدقيق المالي الشامل وكشف الأخطاء)
+        if (matchesAny(lowerText, listOf("تدقيق", "دقق", "فحص الحسابات", "راجع الحسابات", "مراجعة مالية", "audit", "كشف الأخطاء", "شذوذ مالي", "فحص القيود"))) {
+            return ParsedAccountingIntent(
+                action = "AUDIT",
+                replyMessage = "جاري تنفيذ التدقيق المالي المحاسبي لكافة العمليات والصناديق والقيود..."
+            )
+        }
+
+        // 0.2 Cash Box Reconciliation (تسوية وجرد الصناديق)
+        if (matchesAny(lowerText, listOf("تسوية صندوق", "جرد الصندوق", "جردت الصندوق", "تسوية الرصيد الفعلي", "reconcile", "تطابق الصندوق"))) {
+            val extractedBox = extractEntityNameAfterKeywords(text, listOf("الصندوق", "صندوق", "الخزينة", "البنك", "cash box"))
+            val boxName = if (extractedBox.isNotBlank()) extractedBox else defaultCashBoxName
+            return ParsedAccountingIntent(
+                action = "RECONCILE",
+                cashBoxName = boxName,
+                amount = amount,
+                replyMessage = "تسوية وجرد رصيد الصندوق $boxName"
+            )
+        }
+
+        // 0.3 Financial Statements / Trial Balance (ميزان المراجعة والقوائم المالية)
+        if (matchesAny(lowerText, listOf("ميزان المراجعة", "ميزان مراجعه", "قائمة الدخل", "الأرباح والخسائر", "الميزانية العمومية", "المركز المالي", "trial balance", "income statement", "balance sheet"))) {
+            return ParsedAccountingIntent(
+                action = "FINANCIAL_STATEMENTS",
+                replyMessage = "استعراض القوائم والتقارير المالية المزدوجة"
+            )
+        }
+
         // Check for specific report generation queries (Daily, Party Statement, Cash in Hand, Custom)
         if (matchesAny(lowerText, listOf("تقرير", "كشف حساب", "كشف", "ملخص اليوم", "حركة اليوم", "تقرير اليوم", "statement", "report", "daily summary", "cash in hand", "تصدير"))) {
             when {

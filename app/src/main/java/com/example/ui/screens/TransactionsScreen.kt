@@ -72,6 +72,7 @@ import com.example.search.IntelligentSearchEngine
 import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.TransactionCardItem
 import com.example.ui.components.TransactionDetailsDialog
+import com.example.ui.components.transactions.JournalEntriesView
 import com.example.ui.theme.MoneyExpenseRed
 import com.example.ui.theme.MoneyIncomeGreen
 import com.example.ui.theme.PrimaryGreen
@@ -94,7 +95,9 @@ fun TransactionsScreen(viewModel: AccountingViewModel) {
     val expenseCategories by viewModel.expenseCategories.collectAsStateWithLifecycle()
     val defaultCurrency by viewModel.defaultCurrency.collectAsStateWithLifecycle()
     val currencySymbol = defaultCurrency?.symbol?.ifBlank { "ر.س" } ?: "ر.س"
+    val journalEntriesWithLines by viewModel.journalEntriesWithLines.collectAsStateWithLifecycle()
 
+    var activeTab by remember { mutableStateOf(0) } // 0: الحركات, 1: دفتر اليومية المزدوج
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf("الكل") }
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -209,12 +212,62 @@ fun TransactionsScreen(viewModel: AccountingViewModel) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Intelligent Search Input Bar
-            Surface(
-                tonalElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
+            // Mode Switcher: Operational Transactions vs Double-Entry Ledger
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .padding(4.dp)
             ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Surface(
+                    onClick = { activeTab = 0 },
+                    color = if (activeTab == 0) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "الحركات والعمليات",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (activeTab == 0) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = {
+                        activeTab = 1
+                        viewModel.refreshFinancialStatements()
+                    },
+                    color = if (activeTab == 1) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "دفتر اليومية (قيد مزدوج)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (activeTab == 1) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (activeTab == 1) {
+                JournalEntriesView(
+                    entriesWithLines = journalEntriesWithLines,
+                    currencySymbol = currencySymbol
+                )
+            } else {
+                // Intelligent Search Input Bar
+                Surface(
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -497,6 +550,7 @@ fun TransactionsScreen(viewModel: AccountingViewModel) {
                 }
             }
         }
+    }
     }
 
     // Advanced Filter Modal Bottom Sheet

@@ -333,17 +333,25 @@ fun ReportsScreen(
             Tab(
                 selected = selectedTabIndex == 0,
                 onClick = { selectedTabIndex = 0 },
-                text = { Text("التقارير المخصصة", fontWeight = if (selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) }
+                text = { Text("التقارير المخصصة", fontWeight = if (selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal, fontSize = 11.sp) }
             )
             Tab(
                 selected = selectedTabIndex == 1,
                 onClick = { selectedTabIndex = 1 },
-                text = { Text("كشف حساب ويومية", fontWeight = if (selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) }
+                text = { Text("كشف حساب", fontWeight = if (selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal, fontSize = 11.sp) }
             )
             Tab(
                 selected = selectedTabIndex == 2,
                 onClick = { selectedTabIndex = 2 },
-                text = { Text("ميزان الأرصدة (مدين/دائن)", fontWeight = if (selectedTabIndex == 2) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) }
+                text = { Text("أرصدة الأطراف", fontWeight = if (selectedTabIndex == 2) FontWeight.Bold else FontWeight.Normal, fontSize = 11.sp) }
+            )
+            Tab(
+                selected = selectedTabIndex == 3,
+                onClick = {
+                    selectedTabIndex = 3
+                    viewModel.refreshFinancialStatements()
+                },
+                text = { Text("القوائم والميزان", fontWeight = if (selectedTabIndex == 3) FontWeight.Bold else FontWeight.Normal, fontSize = 11.sp) }
             )
         }
 
@@ -1184,7 +1192,7 @@ fun ReportsScreen(
                     }
                 }
             }
-        } else {
+        } else if (selectedTabIndex == 2) {
             // === TAB 2: Trial Balance / All Parties Balances (ميزان الأرصدة الشامل - مدين / دائن / رصيد) ===
             val txByParty = remember(transactions) { transactions.groupBy { it.partyId } }
 
@@ -1602,6 +1610,11 @@ fun ReportsScreen(
                     }
                 }
             }
+        } else {
+            com.example.ui.components.reports.FinancialStatementsView(
+                viewModel = viewModel,
+                currencySymbol = currencySymbol
+            )
         }
     }
 
