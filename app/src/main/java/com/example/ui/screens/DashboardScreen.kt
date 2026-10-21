@@ -17,8 +17,10 @@ import com.example.data.model.TransactionRecord
 import com.example.data.model.TransactionType
 import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.AiMemoryDialog
+import com.example.ui.components.BatchCommandsDialog
 import com.example.ui.components.BudgetsDialog
 import com.example.ui.components.DailyOverviewSection
+import com.example.ui.components.ReconcileCashBoxDialog
 import com.example.ui.components.TransactionDetailsDialog
 import com.example.ui.components.TransferCashDialog
 import com.example.ui.components.VoiceTransactionDialog
@@ -55,6 +57,8 @@ fun DashboardScreen(
     var showTransferDialog by remember { mutableStateOf(false) }
     var showMemoryDialog by remember { mutableStateOf(false) }
     var showBudgetsDialog by remember { mutableStateOf(false) }
+    var showReconcileDialog by remember { mutableStateOf(false) }
+    var showBatchDialog by remember { mutableStateOf(false) }
     var dialogInitialType by remember { mutableStateOf(TransactionType.CUSTOMER_RECEIPT) }
     var selectedTxForDetails by remember { mutableStateOf<TransactionRecord?>(null) }
 
@@ -116,7 +120,10 @@ fun DashboardScreen(
                     showAddDialog = true
                 },
                 onTransferClick = { showTransferDialog = true },
-                onVoiceClick = { showVoiceDialog = true }
+                onVoiceClick = { showVoiceDialog = true },
+                onReconcileClick = { showReconcileDialog = true },
+                onAuditClick = onNavigateToAi,
+                onBatchCommandsClick = { showBatchDialog = true }
             )
         }
 
@@ -191,6 +198,25 @@ fun DashboardScreen(
         BudgetsDialog(
             viewModel = viewModel,
             onDismiss = { showBudgetsDialog = false }
+        )
+    }
+
+    if (showReconcileDialog) {
+        ReconcileCashBoxDialog(
+            cashBoxes = cashBoxes,
+            defaultCurrencySymbol = summary.currencySymbol,
+            onDismiss = { showReconcileDialog = false },
+            onConfirm = { boxId, amount, note ->
+                viewModel.reconcileCashBox(boxId, amount, note)
+                showReconcileDialog = false
+            }
+        )
+    }
+
+    if (showBatchDialog) {
+        BatchCommandsDialog(
+            viewModel = viewModel,
+            onDismiss = { showBatchDialog = false }
         )
     }
 }

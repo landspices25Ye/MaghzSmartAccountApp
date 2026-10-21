@@ -16,9 +16,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,6 +49,9 @@ fun QuickActionsGrid(
     onActionClick: (TransactionType) -> Unit,
     onTransferClick: () -> Unit,
     onVoiceClick: () -> Unit,
+    onReconcileClick: () -> Unit = {},
+    onAuditClick: () -> Unit = {},
+    onBatchCommandsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -120,6 +125,38 @@ fun QuickActionsGrid(
                 color = PrimaryGreen,
                 onClick = onVoiceClick,
                 tag = "quick_action_voice",
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ActionTile(
+                title = "تسوية وجرد صندوق",
+                icon = Icons.Default.AccountBalanceWallet,
+                color = Color(0xFF0D9488),
+                onClick = onReconcileClick,
+                tag = "quick_action_reconcile",
+                modifier = Modifier.weight(1f)
+            )
+
+            ActionTile(
+                title = "تدقيق مالي ذكي",
+                icon = Icons.Default.AutoAwesome,
+                color = Color(0xFF6366F1),
+                onClick = onAuditClick,
+                tag = "quick_action_audit",
+                modifier = Modifier.weight(1f)
+            )
+
+            ActionTile(
+                title = "حزمة أوامر ⚡",
+                icon = Icons.Default.PlaylistAddCheck,
+                color = Color(0xFFF59E0B),
+                onClick = onBatchCommandsClick,
+                tag = "quick_action_batch_commands",
                 modifier = Modifier.weight(1f)
             )
         }

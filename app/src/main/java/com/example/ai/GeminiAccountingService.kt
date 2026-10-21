@@ -98,6 +98,9 @@ class GeminiAccountingService(
                 5. "REPORT": إذا طلب المستخدم تقريراً مالياً أو كشف حساب (مثل تقرير حركة اليوم، كشف حساب عميل، كشف حساب مورد، كشف الصندوق، تقرير المصروفات، تصدير PDF أو إكسل). حدد reportType ("DAILY" أو "PARTY" أو "CASH" أو "CUSTOM") واسم الطرف أو الصندوق إن وجد.
                 6. "REMEMBER": إذا طلب المستخدم تذكر أو حفظ معلومة (مثل "تذكر أن...", "احفظ عندك أن...", "أنا اسمي...", "محمد هو شريكي...", "دائماً ادفع للمورد فلان من بنك كذا") أو ذكر حقيقة مهمة عن نشاطه، قم بصياغة رد ودؤوب يؤكد حفظها وتعبئة كائن newMemory.
                 7. "CHAT": محادثة طبيعية واستفسارات عامة وتحية ومناقشات مالية.
+                8. "AUDIT": التدقيق المالي المحاسبي الشامل لكشف الأخطاء، الصناديق المكشوفة، شذوذ الأرصدة، وفحص توازن القيود.
+                9. "RECONCILE": تسوية ومطابقة رصيد الصندوق الفعلي (الجرد) مع الرصيد الدفتري، وتوليد قيد التسوية وفروقات الجرد تلقائياً (حدد cashBoxName و amount كالرصيد الفعلي).
+                10. "FINANCIAL_STATEMENTS": استعراض القوائم المالية المتكاملة ونظام القيد المزدوج (ميزان المراجعة، قائمة الدخل، الميزانية العمومية، رأس المال العامل).
 
                 أنواع العمليات المتاحة (transactionType):
                 • CUSTOMER_RECEIPT: قبض نقدية من عميل (يزيد الصندوق وينقص دين العميل).
@@ -110,7 +113,7 @@ class GeminiAccountingService(
 
                 يجب أن يكون الرد بصيغة JSON حصراً بدون markdown code block بهذا الشكل:
                 {
-                  "action": "TRANSACTION" أو "MANAGE_ENTITY" أو "QUERY" أو "QUESTION" أو "CHAT" أو "REMEMBER" أو "ADVICE" أو "REPORT",
+                  "action": "TRANSACTION" أو "MANAGE_ENTITY" أو "QUERY" أو "QUESTION" أو "CHAT" أو "REMEMBER" أو "ADVICE" أو "REPORT" أو "AUDIT" أو "RECONCILE" أو "FINANCIAL_STATEMENTS",
                   "entityOperation": "ADD_PARTY" أو "UPDATE_PARTY" أو "DELETE_PARTY" أو "ADD_CASH_BOX" أو "UPDATE_CASH_BOX" أو "DELETE_CASH_BOX" أو "TRANSFER_CASH" أو "ADD_EXPENSE_CATEGORY" أو "UPDATE_EXPENSE_CATEGORY" أو "DELETE_EXPENSE_CATEGORY" أو "SET_DEFAULT_CURRENCY" أو "ADD_CURRENCY" أو "DELETE_TRANSACTION" أو null,
                   "transactionType": "CUSTOMER_RECEIPT" أو "EXPENSE" أو null,
                   "partyName": "اسم الطرف إن وجد",

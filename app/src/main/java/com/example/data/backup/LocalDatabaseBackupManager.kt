@@ -516,6 +516,8 @@ object LocalDatabaseBackupManager {
 
         // Atomic replace in Room DB
         db.withTransaction {
+            db.journalEntryDao().deleteAllLines()
+            db.journalEntryDao().deleteAllEntries()
             db.transactionDao().deleteAll()
             db.partyDao().deleteAll()
             db.cashBoxDao().deleteAll()
@@ -535,12 +537,31 @@ object LocalDatabaseBackupManager {
             if (chatMessages.isNotEmpty()) db.aiChatMessageDao().insertAll(chatMessages)
         }
 
+        // Rebuild Double-Entry Journal Vouchers for restored transactions
+        val boxMap = boxes.associateBy { it.id }
+        val partyMap = parties.associateBy { it.id }
+        transactions.forEach { tx ->
+            val boxName = boxMap[tx.cashBoxId]?.name ?: "الصندوق الرئيسي"
+            val targetBoxName = tx.targetCashBoxId?.let { boxMap[it]?.name }
+            val party = tx.partyId?.let { partyMap[it] }
+            val pair = com.example.domain.DoubleEntryEngine.createJournalEntryForTransaction(
+                transaction = tx,
+                cashBoxName = boxName,
+                targetCashBoxName = targetBoxName,
+                partyName = party?.name,
+                partyType = party?.type,
+                currencySymbol = tx.currency.ifBlank { "ر.س" }
+            )
+            val entryId = db.journalEntryDao().insertEntry(pair.first)
+            db.journalEntryDao().insertLineItems(pair.second.map { it.copy(journalEntryId = entryId) })
+        }
+
         // Ensure defaults if any were missing
         repository.ensureDefaultCashBox()
         repository.ensureDefaultCurrencies()
         repository.ensureDefaultExpenseCategories()
 
-        return Result.success("تم استعادة البيانات بنجاح (${transactions.size} عملية، ${parties.size} طرف، ${boxes.size} صندوق)")
+        return Result.success("تم استعادة البيانات بنجاح (${transactions.size} عملية، ${parties.size} طرف، ${boxes.size} صندوق، مع تحديث دفتر القيود المزدوجة)")
     }
 
     /**

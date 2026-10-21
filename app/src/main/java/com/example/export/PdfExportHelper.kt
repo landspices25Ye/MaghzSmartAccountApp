@@ -802,4 +802,130 @@ object PdfExportHelper {
             </html>
         """.trimIndent()
     }
+
+    fun printGeneralTrialBalancePdf(
+        activity: Activity,
+        trialBalance: List<com.example.data.model.TrialBalanceRow>,
+        summary: com.example.data.model.FinancialStatementSummary?,
+        currencySymbol: String = "ر.س"
+    ) {
+        val html = buildGeneralTrialBalanceHtml(trialBalance, summary, currencySymbol)
+        printHtml(activity, html, "ميزان_المراجعة_العام_والقوائم_المالية")
+    }
+
+    private fun buildGeneralTrialBalanceHtml(
+        trialBalance: List<com.example.data.model.TrialBalanceRow>,
+        summary: com.example.data.model.FinancialStatementSummary?,
+        currencySymbol: String
+    ): String {
+        val currentDate = dateFormat.format(Date())
+        val totalDebit = trialBalance.sumOf { it.totalDebit }
+        val totalCredit = trialBalance.sumOf { it.totalCredit }
+        val isBalanced = Math.abs(totalDebit - totalCredit) < 0.01
+
+        val rowsHtml = StringBuilder()
+        trialBalance.forEachIndexed { index, row ->
+            val status = if (row.netDebit > 0) "مدين" else if (row.netCredit > 0) "دائن" else "متزن"
+            rowsHtml.append("""
+                <tr>
+                    <td>${index + 1}</td>
+                    <td style="text-align: right; font-weight: bold;">${row.accountName}</td>
+                    <td><span class="badge">${row.category.titleAr}</span></td>
+                    <td>${if (row.totalDebit > 0) currencyFormat.format(row.totalDebit) else "-"}</td>
+                    <td>${if (row.totalCredit > 0) currencyFormat.format(row.totalCredit) else "-"}</td>
+                    <td style="color: #10B981; font-weight: bold;">${if (row.netDebit > 0) currencyFormat.format(row.netDebit) else "-"}</td>
+                    <td style="color: #EF4444; font-weight: bold;">${if (row.netCredit > 0) currencyFormat.format(row.netCredit) else "-"}</td>
+                    <td>$status</td>
+                </tr>
+            """.trimIndent())
+        }
+
+        val kpiSection = if (summary != null) """
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-title">إجمالي الأصول</div>
+                    <div class="kpi-val" style="color: #10B981;">${currencyFormat.format(summary.totalAssets)} $currencySymbol</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title">الخصوم والالتزامات</div>
+                    <div class="kpi-val" style="color: #EF4444;">${currencyFormat.format(summary.totalLiabilities)} $currencySymbol</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title">رأس المال العامل</div>
+                    <div class="kpi-val" style="color: #1E40AF;">${currencyFormat.format(summary.workingCapital)} $currencySymbol</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title">صافي الربح التشغيلي</div>
+                    <div class="kpi-val" style="color: ${if (summary.netProfit >= 0) "#10B981" else "#EF4444"};">${currencyFormat.format(summary.netProfit)} $currencySymbol</div>
+                </div>
+            </div>
+        """.trimIndent() else ""
+
+        return """
+            <!DOCTYPE html>
+            <html dir="rtl" lang="ar">
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #1e293b; background: #fff; }
+                    .header { text-align: center; border-bottom: 2px solid #0D9488; padding-bottom: 15px; margin-bottom: 20px; }
+                    .title { font-size: 22px; font-weight: bold; color: #0D9488; }
+                    .subtitle { font-size: 13px; color: #64748b; margin-top: 5px; }
+                    .kpi-grid { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
+                    .kpi-card { flex: 1; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; background: #f8fafc; }
+                    .kpi-title { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+                    .kpi-val { font-size: 15px; font-weight: bold; }
+                    .status-banner { padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 15px; background: ${if (isBalanced) "#ECFDF5; color: #065F46; border: 1px solid #A7F3D0;" else "#FEF2F2; color: #991B1B; border: 1px solid #FECACA;"} }
+                    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+                    th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: center; }
+                    th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+                    .total-row { background-color: #f8fafc; font-weight: bold; }
+                    .badge { display: inline-block; padding: 2px 6px; font-size: 10px; border-radius: 4px; background: #e2e8f0; color: #475569; }
+                    .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div class="title">ميزان المراجعة العام والقوائم المالية (General Trial Balance)</div>
+                    <div class="subtitle">نظام القيد المزدوج المتكامل • تاريخ الإصدار: $currentDate</div>
+                </div>
+
+                $kpiSection
+
+                <div class="status-banner">
+                    ${if (isBalanced) "حالة الميزان: متوازن محاسبياً 100% (مجموع المدين يطابق مجموع الدائن تماماً) ✓" else "حالة الميزان: يوجد فارق غير متوازن قدره ${currencyFormat.format(Math.abs(totalDebit - totalCredit))} $currencySymbol ⚠"}
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>اسم الحساب</th>
+                            <th>التصنيف</th>
+                            <th>مجموع مدين</th>
+                            <th>مجموع دائن</th>
+                            <th>صافي مدين</th>
+                            <th>صافي دائن</th>
+                            <th>الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        $rowsHtml
+                        <tr class="total-row">
+                            <td colspan="3" style="text-align: right;">الإجمالي العام المتطابق:</td>
+                            <td style="color: #10B981;">${currencyFormat.format(totalDebit)}</td>
+                            <td style="color: #EF4444;">${currencyFormat.format(totalCredit)}</td>
+                            <td colspan="2" style="font-weight: bold;">${if (isBalanced) "متوازن 0.00 ✓" else "${currencyFormat.format(Math.abs(totalDebit - totalCredit))}"}</td>
+                            <td>-</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="footer">
+                    تم إنشاء هذا التقرير المالي آلياً بواسطة نظام المحاسبة الذكي • معتمد ومطابق للمعايير المحاسبية المزدوجة
+                </div>
+            </body>
+            </html>
+        """.trimIndent()
+    }
 }

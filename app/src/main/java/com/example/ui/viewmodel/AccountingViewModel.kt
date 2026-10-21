@@ -158,6 +158,18 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
     private val _isAuditing = MutableStateFlow(false)
     val isAuditing: StateFlow<Boolean> = _isAuditing.asStateFlow()
 
+    private val _batchItems = MutableStateFlow<List<com.example.domain.BatchCommandItem>>(emptyList())
+    val batchItems: StateFlow<List<com.example.domain.BatchCommandItem>> = _batchItems.asStateFlow()
+
+    private val _isBatchExecuting = MutableStateFlow(false)
+    val isBatchExecuting: StateFlow<Boolean> = _isBatchExecuting.asStateFlow()
+
+    private val _batchProgress = MutableStateFlow(Pair(0, 0))
+    val batchProgress: StateFlow<Pair<Int, Int>> = _batchProgress.asStateFlow()
+
+    private val _batchSummary = MutableStateFlow<com.example.domain.BatchExecutionSummary?>(null)
+    val batchSummary: StateFlow<com.example.domain.BatchExecutionSummary?> = _batchSummary.asStateFlow()
+
     init {
         val database = AppDatabase.getInstance(application)
         repository = AccountingRepository(database)
@@ -929,5 +941,78 @@ class AccountingViewModel(application: Application) : AndroidViewModel(applicati
     fun setThemeMode(mode: com.example.ui.theme.AppThemeMode) {
         themePreferences.setThemeMode(mode)
         _operationFeedback.value = "تم تغيير مظهر التطبيق إلى: ${mode.title}"
+    }
+
+    // ==================== BATCH COMMANDS PIPELINE ====================
+    fun parseBatchCommands(rawText: String) {
+        viewModelScope.launch {
+            val lines = com.example.domain.BatchCommandsEngine.splitBatchText(rawText)
+            val defaultCurr = defaultCurrency.value?.symbol?.ifBlank { "ر.س" } ?: "ر.س"
+            val defaultBox = defaultCashBox.value?.name ?: "الصندوق الرئيسي"
+            val categories = expenseCategories.value.map { it.name }
+            val parsed = com.example.domain.BatchCommandsEngine.parseBatchItems(
+                commands = lines,
+                defaultCurrencySymbol = defaultCurr,
+                defaultCashBoxName = defaultBox,
+                availableCategories = categories
+            )
+            _batchItems.value = parsed
+            _batchSummary.value = null
+        }
+    }
+
+    fun toggleBatchCommandItem(id: String) {
+        _batchItems.value = _batchItems.value.map {
+            if (it.id == id) it.copy(isSelected = !it.isSelected) else it
+        }
+    }
+
+    fun removeBatchCommandItem(id: String) {
+        _batchItems.value = _batchItems.value.filter { it.id != id }
+    }
+
+    fun executeBatchCommands(onComplete: (com.example.domain.BatchExecutionSummary) -> Unit = {}) {
+        val items = _batchItems.value
+        if (items.none { it.isSelected }) return
+
+        viewModelScope.launch {
+            _isBatchExecuting.value = true
+            _batchProgress.value = Pair(0, items.count { it.isSelected })
+            try {
+                val currSymbol = defaultCurrency.value?.symbol?.ifBlank { "ر.س" } ?: "ر.س"
+                val summary = com.example.domain.BatchCommandsEngine.executeBatch(
+                    items = items,
+                    assistant = assistant,
+                    repository = repository,
+                    parties = parties.value,
+                    cashBoxes = cashBoxes.value,
+                    expenseCategories = expenseCategories.value,
+                    currencies = currencies.value,
+                    currencySymbol = currSymbol,
+                    onProgress = { current, total, updatedItem ->
+                        _batchProgress.value = Pair(current, total)
+                        _batchItems.value = _batchItems.value.map {
+                            if (it.id == updatedItem.id) updatedItem else it
+                        }
+                    }
+                )
+                _batchSummary.value = summary
+                _operationFeedback.value = "⚡ تم تنفيذ حزمة العمليات (${summary.successfulCount}/${summary.totalCommands}) بنجاح"
+                com.example.data.backup.LocalDatabaseBackupManager.checkAndTriggerAutoBackup(getApplication(), repository)
+                refreshFinancialStatements()
+                onComplete(summary)
+            } catch (e: Exception) {
+                _operationFeedback.value = "حدث خطأ أثناء تنفيذ الحزمة: ${e.localizedMessage}"
+            } finally {
+                _isBatchExecuting.value = false
+            }
+        }
+    }
+
+    fun clearBatchState() {
+        _batchItems.value = emptyList()
+        _batchSummary.value = null
+        _batchProgress.value = Pair(0, 0)
+        _isBatchExecuting.value = false
     }
 }

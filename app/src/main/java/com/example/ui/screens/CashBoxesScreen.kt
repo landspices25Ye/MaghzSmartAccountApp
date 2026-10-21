@@ -52,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.CashBox
 import com.example.ui.components.AddCashBoxDialog
 import com.example.ui.components.EditCashBoxDialog
+import com.example.ui.components.ReconcileCashBoxDialog
 import com.example.ui.components.TransferCashDialog
 import com.example.ui.theme.MoneyGold
 import com.example.ui.theme.MoneyIncomeGreen
@@ -68,6 +69,7 @@ fun CashBoxesScreen(viewModel: AccountingViewModel) {
     var showAddDialog by remember { mutableStateOf(false) }
     var showTransferDialog by remember { mutableStateOf(false) }
     var boxToEdit by remember { mutableStateOf<CashBox?>(null) }
+    var boxToReconcile by remember { mutableStateOf<CashBox?>(null) }
 
     val currencyFormat = remember { DecimalFormat("#,##0.##") }
     val totalCash = remember(cashBoxes) { cashBoxes.sumOf { it.balance } }
@@ -229,25 +231,35 @@ fun CashBoxesScreen(viewModel: AccountingViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    OutlinedButton(
+                                        onClick = { boxToReconcile = box },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier = Modifier.testTag("reconcile_cashbox_button_${box.id}")
+                                    ) {
+                                        Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("جرد وتسوية", fontSize = 11.sp)
+                                    }
+
                                     OutlinedButton(
                                         onClick = { boxToEdit = box },
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                         modifier = Modifier.testTag("edit_cashbox_button_${box.id}")
                                     ) {
                                         Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("تعديل البيانات", fontSize = 11.sp)
+                                        Text("تعديل", fontSize = 11.sp)
                                     }
 
                                     if (!box.isDefault) {
                                         OutlinedButton(
                                             onClick = { viewModel.setDefaultCashBox(box.id) },
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                         ) {
                                             Icon(Icons.Default.Star, contentDescription = null, tint = MoneyGold, modifier = Modifier.size(14.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Text("تعيين كافتراضي", fontSize = 11.sp)
+                                            Text("افتراضي", fontSize = 11.sp)
                                         }
                                     }
                                 }
@@ -301,6 +313,18 @@ fun CashBoxesScreen(viewModel: AccountingViewModel) {
             onConfirm = { fromBoxId, toBoxId, amount, note ->
                 viewModel.transferBetweenBoxes(fromBoxId, toBoxId, amount, note)
                 showTransferDialog = false
+            }
+        )
+    }
+
+    boxToReconcile?.let { box ->
+        ReconcileCashBoxDialog(
+            cashBox = box,
+            currencySymbol = currencySymbol,
+            onDismiss = { boxToReconcile = null },
+            onConfirm = { physicalBal, note ->
+                viewModel.reconcileCashBox(box.id, physicalBal, note)
+                boxToReconcile = null
             }
         )
     }

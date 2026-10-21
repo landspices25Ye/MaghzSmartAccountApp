@@ -17,11 +17,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import android.app.Activity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,6 +63,9 @@ fun FinancialStatementsView(
     currencySymbol: String = "ر.س",
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+
     val trialBalance by viewModel.trialBalance.collectAsStateWithLifecycle()
     val financialSummary by viewModel.financialStatementSummary.collectAsStateWithLifecycle()
     val auditReport by viewModel.auditReport.collectAsStateWithLifecycle()
@@ -414,6 +421,52 @@ fun FinancialStatementsView(
                                 color = if (isBalanced) Color(0xFF10B981) else Color(0xFFEF4444),
                                 modifier = Modifier.weight(1.2f)
                             )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Export Buttons for Trial Balance & Statements
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val file = com.example.export.ExcelExportHelper.exportGeneralTrialBalanceToExcel(
+                                        context = context,
+                                        trialBalance = trialBalance,
+                                        summary = financialSummary,
+                                        currencySymbol = currencySymbol
+                                    )
+                                    if (file != null) {
+                                        com.example.export.ExcelExportHelper.shareFile(context, file)
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
+                            ) {
+                                Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("تصدير إكسل (CSV)", fontSize = 11.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (activity != null) {
+                                        com.example.export.PdfExportHelper.printGeneralTrialBalancePdf(
+                                            activity = activity,
+                                            trialBalance = trialBalance,
+                                            summary = financialSummary,
+                                            currencySymbol = currencySymbol
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("طباعة PDF رسمي", fontSize = 11.sp)
+                            }
                         }
                     }
                 }

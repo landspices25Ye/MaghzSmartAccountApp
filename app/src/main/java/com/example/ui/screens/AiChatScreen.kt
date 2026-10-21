@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.AiMemoryDialog
 import com.example.ui.components.AiSettingsDialog
+import com.example.ui.components.BatchCommandsDialog
 import com.example.ui.components.VoiceTransactionDialog
 import com.example.ui.components.chat.AiChatHeader
 import com.example.ui.components.chat.AiChatInputBar
@@ -54,6 +55,7 @@ fun AiChatScreen(viewModel: AccountingViewModel) {
     var showMemoryDialog by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
     var showVoiceDialog by remember { mutableStateOf(false) }
+    var showBatchDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
@@ -71,14 +73,19 @@ fun AiChatScreen(viewModel: AccountingViewModel) {
                 activeMemoriesCount = activeMemoriesCount,
                 onOpenSettings = { showAiSettings = true },
                 onOpenMemory = { showMemoryDialog = true },
-                onClearChat = { showClearChatDialog = true }
+                onClearChat = { showClearChatDialog = true },
+                onOpenBatchCommands = { showBatchDialog = true }
             )
         },
         bottomBar = {
             Column(modifier = Modifier.imePadding()) {
                 AiQuickPromptsRow(
                     onPromptSelected = { prompt ->
-                        viewModel.sendAiMessage(prompt)
+                        if (prompt.contains("حزمة أوامر")) {
+                            showBatchDialog = true
+                        } else {
+                            viewModel.sendAiMessage(prompt)
+                        }
                     }
                 )
                 AiChatInputBar(
@@ -168,6 +175,13 @@ fun AiChatScreen(viewModel: AccountingViewModel) {
         VoiceTransactionDialog(
             viewModel = viewModel,
             onDismiss = { showVoiceDialog = false }
+        )
+    }
+
+    if (showBatchDialog) {
+        BatchCommandsDialog(
+            viewModel = viewModel,
+            onDismiss = { showBatchDialog = false }
         )
     }
 }

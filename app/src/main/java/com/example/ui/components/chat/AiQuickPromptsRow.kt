@@ -21,6 +21,7 @@ fun AiQuickPromptsRow(
     modifier: Modifier = Modifier
 ) {
     val prompts = listOf(
+        "⚡ تنفيذ حزمة أوامر",
         "🔍 تدقيق الحسابات والقيود",
         "⚖️ ميزان المراجعة والقوائم",
         "كم رصيدي اليوم وصافي ثروتي؟",

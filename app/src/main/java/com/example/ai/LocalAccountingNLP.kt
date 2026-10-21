@@ -205,6 +205,7 @@ object LocalAccountingNLP {
             if (amount > 0 && fromBox.isNotBlank() && toBox.isNotBlank()) {
                 return ParsedAccountingIntent(
                     action = "MANAGE_ENTITY",
+                    transactionType = TransactionType.TRANSFER,
                     entityOperation = "TRANSFER_CASH",
                     amount = amount,
                     cashBoxName = fromBox,

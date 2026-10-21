@@ -324,6 +324,59 @@ object ExcelExportHelper {
         }
     }
 
+    fun exportGeneralTrialBalanceToExcel(
+        context: Context,
+        trialBalance: List<com.example.data.model.TrialBalanceRow>,
+        summary: com.example.data.model.FinancialStatementSummary?,
+        currencySymbol: String = "ر.س"
+    ): File? {
+        try {
+            val exportDir = File(context.cacheDir, "reports")
+            if (!exportDir.exists()) exportDir.mkdirs()
+
+            val fileName = "ميزان_المراجعة_العام_${fileDateFormat.format(Date())}.csv"
+            val file = File(exportDir, fileName)
+
+            FileOutputStream(file).use { fos ->
+                fos.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                OutputStreamWriter(fos, StandardCharsets.UTF_8).use { writer ->
+                    writer.write("\"ميزان المراجعة العام والقوائم المالية (General Trial Balance)\"\n")
+                    writer.write("\"تاريخ الاستخراج: \",\"${dateFormat.format(Date())}\"\n\n")
+
+                    if (summary != null) {
+                        writer.write("\"مؤشرات المركز المالي الأساسية:\"\n")
+                        writer.write("\"إجمالي الأصول:\",\"${currencyFormat.format(summary.totalAssets)} $currencySymbol\"\n")
+                        writer.write("\"إجمالي الخصوم والالتزامات:\",\"${currencyFormat.format(summary.totalLiabilities)} $currencySymbol\"\n")
+                        writer.write("\"رأس المال العامل:\",\"${currencyFormat.format(summary.workingCapital)} $currencySymbol\"\n")
+                        writer.write("\"إجمالي الإيرادات:\",\"${currencyFormat.format(summary.totalRevenue)} $currencySymbol\"\n")
+                        writer.write("\"المصروفات التشغيلية:\",\"${currencyFormat.format(summary.totalExpenses)} $currencySymbol\"\n")
+                        writer.write("\"صافي الربح التشغيلي:\",\"${currencyFormat.format(summary.netProfit)} $currencySymbol\"\n\n")
+                    }
+
+                    writer.write("\"م\",\"اسم الحساب\",\"التصنيف المحاسبي\",\"مجموع مدين\",\"مجموع دائن\",\"صافي مدين\",\"صافي دائن\",\"حالة الرصيد\"\n")
+
+                    var totalDebit = 0.0
+                    var totalCredit = 0.0
+
+                    trialBalance.forEachIndexed { index, row ->
+                        totalDebit += row.totalDebit
+                        totalCredit += row.totalCredit
+                        val status = if (row.netDebit > 0) "مدين" else if (row.netCredit > 0) "دائن" else "متزن"
+                        val cleanName = row.accountName.replace("\"", "\"\"")
+                        writer.write("\"${index + 1}\",\"$cleanName\",\"${row.category.titleAr}\",\"${row.totalDebit}\",\"${row.totalCredit}\",\"${row.netDebit}\",\"${row.netCredit}\",\"$status\"\n")
+                    }
+
+                    writer.write("\n\"\",\"الإجمالي العام المتطابق:\",\"\",\"$totalDebit\",\"$totalCredit\",\"\",\"\",\"${if (Math.abs(totalDebit - totalCredit) < 0.01) "متوازن 100% ✓" else "فارق غير متوازن"}\"\n")
+                    writer.flush()
+                }
+            }
+            return file
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+
     fun shareFile(context: Context, file: File, mimeType: String = "text/csv") {
         val uri = FileProvider.getUriForFile(
             context,

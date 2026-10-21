@@ -145,6 +145,7 @@ class AccountingRepository(val database: AppDatabase) {
     suspend fun getPartyById(id: Long): Party? = partyDao.getPartyById(id)
 
     suspend fun getAllCashBoxesList(): List<CashBox> = cashBoxDao.getAllCashBoxes()
+    suspend fun getAllPartiesList(): List<Party> = partyDao.getAllParties()
     suspend fun getAllTransactionsList(): List<TransactionRecord> = transactionDao.getAllTransactionsList()
 
     suspend fun ensureDefaultCashBox(): CashBox {

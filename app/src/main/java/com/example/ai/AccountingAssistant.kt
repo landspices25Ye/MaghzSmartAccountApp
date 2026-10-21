@@ -34,7 +34,8 @@ class AccountingAssistant(
         existingCategories: List<ExpenseCategory> = emptyList(),
         existingCurrencies: List<AppCurrency> = emptyList(),
         activeMemories: List<AiMemoryFact> = emptyList(),
-        conversationHistory: List<Pair<String, Boolean>> = emptyList()
+        conversationHistory: List<Pair<String, Boolean>> = emptyList(),
+        isSubCommand: Boolean = false
     ): AssistantResult {
         val trimmed = input.trim()
         if (trimmed.isBlank()) {
@@ -43,6 +44,19 @@ class AccountingAssistant(
                 isSuccess = false,
                 actionType = "ERROR"
             )
+        }
+
+        // Automatic multi-command batch detection (التعرف التلقائي على حزم الأوامر المتعددة)
+        if (!isSubCommand) {
+            val detectedCommands = com.example.domain.BatchCommandsEngine.splitBatchText(trimmed)
+            if (detectedCommands.size > 1) {
+                val defaultCurr = existingCurrencies.firstOrNull { it.isDefault }?.symbol?.ifBlank { "ر.س" } ?: "ر.س"
+                return processBatchInternal(
+                    commands = detectedCommands,
+                    repository = repository,
+                    defaultCurrencySymbol = defaultCurr
+                )
+            }
         }
 
         val defaultBox = existingBoxes.firstOrNull { it.isDefault } ?: repository.ensureDefaultCashBox()
@@ -875,6 +889,70 @@ class AccountingAssistant(
             isSuccess = true,
             learnedMemory = savedMemoryFact,
             actionType = intent.action.ifBlank { "CHAT" }
+        )
+    }
+
+    private suspend fun processBatchInternal(
+        commands: List<String>,
+        repository: AccountingRepository,
+        defaultCurrencySymbol: String
+    ): AssistantResult {
+        val results = mutableListOf<Pair<String, AssistantResult>>()
+        var lastTx: TransactionRecord? = null
+        var successCount = 0
+        var totalInflow = 0.0
+        var totalOutflow = 0.0
+
+        for (cmd in commands) {
+            val currentParties = repository.getAllPartiesList()
+            val currentBoxes = repository.getAllCashBoxesList()
+            val currentCategories = repository.getAllExpenseCategoriesList()
+            val currentCurrencies = repository.getAllCurrenciesList()
+            val currentMemories = repository.getActiveAiMemoriesList()
+
+            val res = processUserSpeechOrText(
+                input = cmd,
+                repository = repository,
+                existingParties = currentParties,
+                existingBoxes = currentBoxes,
+                existingCategories = currentCategories,
+                existingCurrencies = currentCurrencies,
+                activeMemories = currentMemories,
+                isSubCommand = true
+            )
+            results.add(cmd to res)
+            if (res.isSuccess) {
+                successCount++
+                res.executedTransaction?.let { tx ->
+                    lastTx = tx
+                    when (tx.type) {
+                        TransactionType.CUSTOMER_RECEIPT, TransactionType.INCOME -> totalInflow += tx.amount
+                        TransactionType.SUPPLIER_PAYMENT, TransactionType.EXPENSE -> totalOutflow += tx.amount
+                        else -> {}
+                    }
+                }
+            }
+        }
+
+        val sb = StringBuilder()
+        sb.append("⚡ **تم تنفيذ حزمة العمليات (${commands.size} عمليات) بنجاح:**\n\n")
+        results.forEachIndexed { index, (cmd, res) ->
+            val icon = if (res.isSuccess) "✔" else "✖"
+            sb.append("$icon ${index + 1}. **$cmd**\n   └ ${res.reply.replace("\n", " ").take(100)}\n\n")
+        }
+
+        if (totalInflow > 0 || totalOutflow > 0) {
+            sb.append("📊 **الموجز المالي للحزمة:** ")
+            if (totalInflow > 0) sb.append("مقبوضات: +${currencyFormat.format(totalInflow)} $defaultCurrencySymbol  ")
+            if (totalOutflow > 0) sb.append("مدفوعات: -${currencyFormat.format(totalOutflow)} $defaultCurrencySymbol")
+            sb.append("\nتم إنشاء وترحيل كافة قيود اليومية المزدوجة المتوازنة آلياً.")
+        }
+
+        return AssistantResult(
+            reply = sb.toString().trim(),
+            executedTransaction = lastTx,
+            isSuccess = successCount > 0,
+            actionType = "BATCH_EXECUTION"
         )
     }
 }
